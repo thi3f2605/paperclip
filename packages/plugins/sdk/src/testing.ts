@@ -42,6 +42,9 @@ import type {
   PrincipalPermissionGrant,
   PermissionKey,
   PrincipalType,
+  PluginBridgeRequestContext,
+  PluginDataHandler,
+  PluginActionHandler,
 } from "./types.js";
 import type {
   PluginEnvironmentValidateConfigParams,
@@ -57,8 +60,6 @@ import type {
   PluginEnvironmentRealizeWorkspaceResult,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
-  PluginPerformActionActorContext,
-  PluginPerformActionContext,
 } from "./protocol.js";
 
 export interface TestHarnessOptions {
@@ -78,10 +79,9 @@ export interface TestHarnessLogEntry {
 
 export interface TestHarnessPerformActionOptions {
   /**
-   * Authenticated actor context to expose to the action handler. Omitted fields
-   * default to null, and `type` defaults to `system`.
+   * Authenticated actor context to expose to the action handler.
    */
-  actor?: Partial<PluginPerformActionActorContext> | null;
+  actor?: Partial<NonNullable<PluginBridgeRequestContext["actor"]> & { type?: "user" | "agent" | "system"; companyId?: string | null }> | null;
   /**
    * Host-authorized company scope. When provided, this is injected into
    * `params.companyId` so tests match the production bridge's anti-spoofing
@@ -112,12 +112,12 @@ export interface TestHarness {
   /** Execute a previously-registered scheduled job handler. */
   runJob(jobKey: string, partial?: Partial<PluginJobContext>): Promise<void>;
   /** Invoke a `ctx.data.register(...)` handler by key. */
-  getData<T = unknown>(key: string, params?: Record<string, unknown>): Promise<T>;
+  getData<T = unknown>(key: string, params?: Record<string, unknown>, context?: Partial<PluginBridgeRequestContext>): Promise<T>;
   /** Invoke a `ctx.actions.register(...)` handler by key. */
   performAction<T = unknown>(
     key: string,
     params?: Record<string, unknown>,
-    options?: TestHarnessPerformActionOptions,
+    options?: TestHarnessPerformActionOptions | Partial<PluginBridgeRequestContext>,
   ): Promise<T>;
   /** Execute a registered tool handler via `ctx.tools.execute(...)`. */
   executeTool<T = ToolResult>(name: string, params: unknown, runCtx?: Partial<ToolRunContext>): Promise<T>;
@@ -510,11 +510,8 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const events: EventRegistration[] = [];
   const jobs = new Map<string, (job: PluginJobContext) => Promise<void>>();
   const launchers = new Map<string, PluginLauncherRegistration>();
-  const dataHandlers = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
-  const actionHandlers = new Map<
-    string,
-    (params: Record<string, unknown>, context: PluginPerformActionContext) => Promise<unknown>
-  >();
+  const dataHandlers = new Map<string, PluginDataHandler>();
+  const actionHandlers = new Map<string, PluginActionHandler>();
   const toolHandlers = new Map<string, (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>>();
 
   function localFolderKey(companyId: string, folderKey: string): string {
@@ -529,35 +526,46 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
   }
 
-  function actorTypeOrSystem(value: unknown): PluginPerformActionActorContext["type"] {
-    return value === "user" || value === "agent" || value === "system" ? value : "system";
-  }
-
   function actionContextFor(
     params: Record<string, unknown>,
     options?: TestHarnessPerformActionOptions,
-  ): PluginPerformActionContext {
+  ): PluginBridgeRequestContext {
     const actorInput = options?.actor ?? null;
     const companyId = stringOrNull(options?.companyId) ?? stringOrNull(actorInput?.companyId) ?? stringOrNull(params.companyId);
+    const actorType = actorInput?.actorType === "agent" || actorInput?.type === "agent" ? "agent" : "user";
+    const userId = stringOrNull(actorInput?.userId);
+    const agentId = stringOrNull(actorInput?.agentId);
     const actor = Object.freeze({
-      type: actorTypeOrSystem(actorInput?.type),
-      userId: stringOrNull(actorInput?.userId),
-      agentId: stringOrNull(actorInput?.agentId),
+      actorType,
+      actorId: stringOrNull(actorInput?.actorId) ?? (actorType === "agent" ? agentId ?? "agent-test" : userId ?? "user-test"),
+      userId,
+      agentId,
       runId: stringOrNull(actorInput?.runId),
-      companyId,
+      source: stringOrNull(actorInput?.source),
     });
-    return Object.freeze({ actor, companyId });
+    return Object.freeze({ actor, companyId, renderEnvironment: null });
   }
 
   function paramsWithHostCompanyScope(
     params: Record<string, unknown>,
-    context: PluginPerformActionContext,
+    context: PluginBridgeRequestContext,
     options?: TestHarnessPerformActionOptions,
   ): Record<string, unknown> {
     if (Object.prototype.hasOwnProperty.call(options ?? {}, "companyId")) {
       return context.companyId ? { ...params, companyId: context.companyId } : { ...params };
     }
     return params;
+  }
+
+  function isBridgeRequestContextOptions(
+    options: TestHarnessPerformActionOptions | Partial<PluginBridgeRequestContext> | undefined,
+  ): options is Partial<PluginBridgeRequestContext> {
+    if (!options || typeof options !== "object") return false;
+    const actor = (options as Partial<PluginBridgeRequestContext>).actor;
+    return Boolean(
+      "renderEnvironment" in options
+      || (actor && typeof actor === "object" && "actorType" in actor),
+    );
   }
 
   function normalizeLocalFolderRelativePath(relativePath: string): string {
@@ -2355,20 +2363,33 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         scheduledAt: partial.scheduledAt ?? new Date().toISOString(),
       });
     },
-    async getData<T = unknown>(key: string, params: Record<string, unknown> = {}) {
+    async getData<T = unknown>(key: string, params: Record<string, unknown> = {}, context: Partial<PluginBridgeRequestContext> = {}) {
       const handler = dataHandlers.get(key);
       if (!handler) throw new Error(`No data handler registered for '${key}'`);
-      return await handler(params) as T;
+      return await handler(params, {
+        actor: context.actor ?? null,
+        companyId: context.companyId ?? null,
+        renderEnvironment: context.renderEnvironment ?? null,
+      }) as T;
     },
     async performAction<T = unknown>(
       key: string,
       params: Record<string, unknown> = {},
-      options?: TestHarnessPerformActionOptions,
+      options?: TestHarnessPerformActionOptions | Partial<PluginBridgeRequestContext>,
     ) {
       const handler = actionHandlers.get(key);
       if (!handler) throw new Error(`No action handler registered for '${key}'`);
-      const context = actionContextFor(params, options);
-      return await handler(paramsWithHostCompanyScope(params, context, options), context) as T;
+      const bridgeContext = isBridgeRequestContextOptions(options)
+        ? {
+            actor: options.actor ?? null,
+            companyId: options.companyId ?? null,
+            renderEnvironment: options.renderEnvironment ?? null,
+          }
+        : actionContextFor(params, options as TestHarnessPerformActionOptions | undefined);
+      return await handler(
+        paramsWithHostCompanyScope(params, bridgeContext, options as TestHarnessPerformActionOptions | undefined),
+        bridgeContext,
+      ) as T;
     },
     async executeTool<T = ToolResult>(name: string, params: unknown, runCtx: Partial<ToolRunContext> = {}) {
       const handler = toolHandlers.get(name);

@@ -2,6 +2,7 @@ import {
   definePlugin,
   runWorker,
   type Issue,
+  type PluginBridgeRequestContext,
   type PluginContext,
   type PluginIssueRelationSummary,
   type ToolResult,
@@ -49,6 +50,16 @@ function stringParam(value: unknown, name: string): string {
     throw new Error(`${name} is required`);
   }
   return value.trim();
+}
+
+function assertTrustedBridgeUserScope(userId: string, request?: PluginBridgeRequestContext): void {
+  const actorUserId = request?.actor?.userId;
+  if (!actorUserId) {
+    throw new Error("Briefs user-scoped UI calls require a signed-in user");
+  }
+  if (actorUserId !== userId) {
+    throw new Error("Briefs user scope mismatch");
+  }
 }
 
 function numberParam(value: unknown): number | null {
@@ -280,26 +291,28 @@ const plugin = definePlugin({
   async setup(ctx) {
     const store = createBriefsStore(ctx.db);
 
-    ctx.data.register("cards", async (params) => {
+    ctx.data.register("cards", async (params, request) => {
       const input = listBriefCardsInputSchema.parse(params);
+      assertTrustedBridgeUserScope(input.userId, request);
       return {
         cards: await store.listCards(input),
       };
     });
 
-    ctx.data.register("preferences", async (params) => {
+    ctx.data.register("preferences", async (params, request) => {
       const input = objectParam(params, "params");
       const companyId = typeof input.companyId === "string" ? input.companyId : "";
       const userId = typeof input.userId === "string" ? input.userId : "";
       if (!companyId || !userId) {
         throw new Error("companyId and userId are required");
       }
+      assertTrustedBridgeUserScope(userId, request);
       return {
         preferences: await store.loadPreferences({ companyId, userId }),
       };
     });
 
-    ctx.data.register("page", async (params) => {
+    ctx.data.register("page", async (params, request) => {
       const input = objectParam(params, "params");
       const companyId = typeof input.companyId === "string" ? input.companyId : "";
       const userId = typeof input.userId === "string" ? input.userId : "";
@@ -307,6 +320,7 @@ const plugin = definePlugin({
       if (!companyId || !userId) {
         throw new Error("companyId and userId are required");
       }
+      assertTrustedBridgeUserScope(userId, request);
       const [cards, preferences] = await Promise.all([
         store.listCards({ companyId, userId, includeHidden }),
         store.loadPreferences({ companyId, userId }),
@@ -373,8 +387,9 @@ const plugin = definePlugin({
       return ctx.routines.managed.run(MANUAL_REFRESH_ROUTINE_KEY, stringParam(params.companyId, "companyId"));
     });
 
-    ctx.actions.register("pin-card", async (params) => {
+    ctx.actions.register("pin-card", async (params, request) => {
       const input = pinBriefCardInputSchema.parse(params);
+      assertTrustedBridgeUserScope(input.userId, request);
       await store.setPinned(input);
       await ctx.activity.log({
         companyId: input.companyId,
@@ -386,8 +401,9 @@ const plugin = definePlugin({
       return { ok: true };
     });
 
-    ctx.actions.register("update-preferences", async (params) => {
+    ctx.actions.register("update-preferences", async (params, request) => {
       const input = updateBriefPreferencesInputSchema.parse(params);
+      assertTrustedBridgeUserScope(input.userId, request);
       const preferences = briefPreferencesSchema.parse(input);
       await store.upsertPreferences(preferences);
       await ctx.activity.log({

@@ -55,7 +55,7 @@ import type { PluginJobStore } from "../services/plugin-job-store.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
-import type { PluginPerformActionActorContext, ToolRunContext } from "@paperclipai/plugin-sdk";
+import type { PluginBridgeActorContext, PluginPerformActionActorContext, ToolRunContext } from "@paperclipai/plugin-sdk";
 import { JsonRpcCallError, PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
 import {
   assertAuthenticated,
@@ -598,6 +598,18 @@ export function pluginRoutes(
       agentId: null,
       runId: req.actor.runId ?? null,
       companyId: scopedCompanyId,
+    };
+  }
+
+  function trustedPluginBridgeActor(req: Request): PluginBridgeActorContext {
+    const actor = getActorInfo(req);
+    return {
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      userId: req.actor.type === "board" ? req.actor.userId ?? null : null,
+      agentId: req.actor.type === "agent" ? req.actor.agentId ?? null : null,
+      runId: actor.runId,
+      source: req.actor.source ?? null,
     };
   }
 
@@ -1169,6 +1181,7 @@ export function pluginRoutes(
           key: body.key,
           ...(companyId ? { companyId } : {}),
           params: body.params ?? {},
+          actor: trustedPluginBridgeActor(req),
           renderEnvironment: body.renderEnvironment ?? null,
         },
       );
@@ -1262,6 +1275,7 @@ export function pluginRoutes(
           key: body.key,
           params: actionParamsWithAuthorizedCompanyScope(body.params, companyId),
           actorContext: performActionActorContext(req, companyId),
+          actor: trustedPluginBridgeActor(req),
           renderEnvironment: body.renderEnvironment ?? null,
         },
       );
@@ -1356,6 +1370,7 @@ export function pluginRoutes(
           key,
           ...(companyId ? { companyId } : {}),
           params: body?.params ?? {},
+          actor: trustedPluginBridgeActor(req),
           renderEnvironment: body?.renderEnvironment ?? null,
         },
       );
@@ -1446,6 +1461,7 @@ export function pluginRoutes(
           key,
           params: actionParamsWithAuthorizedCompanyScope(body?.params, companyId),
           actorContext: performActionActorContext(req, companyId),
+          actor: trustedPluginBridgeActor(req),
           renderEnvironment: body?.renderEnvironment ?? null,
         },
       );

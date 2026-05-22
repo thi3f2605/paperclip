@@ -642,6 +642,50 @@ describe.sequential("plugin tool and bridge authz", () => {
       key: "health",
       companyId: companyA,
       params: { view: "compact" },
+      actor: {
+        actorType: "user",
+        actorId: "user-1",
+        userId: "user-1",
+        agentId: null,
+        runId: null,
+        source: "session",
+      },
+      renderEnvironment: null,
+    });
+  });
+
+  it("passes trusted actor context to plugin data handlers without trusting caller user params", async () => {
+    readyPlugin();
+    const call = vi.fn().mockResolvedValue({ ok: true });
+    const { app } = await createApp(boardActor({
+      userId: "signed-in-user",
+      companyIds: [companyA],
+    }), {}, {
+      bridgeDeps: {
+        workerManager: { call },
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/plugins/${pluginId}/data/page`)
+      .send({
+        companyId: companyA,
+        params: { companyId: companyA, userId: "victim-user" },
+      });
+
+    expect(res.status).toBe(200);
+    expect(call).toHaveBeenCalledWith(pluginId, "getData", {
+      key: "page",
+      companyId: companyA,
+      params: { companyId: companyA, userId: "victim-user" },
+      actor: {
+        actorType: "user",
+        actorId: "signed-in-user",
+        userId: "signed-in-user",
+        agentId: null,
+        runId: null,
+        source: "session",
+      },
       renderEnvironment: null,
     });
   });
@@ -673,6 +717,14 @@ describe.sequential("plugin tool and bridge authz", () => {
         agentId: null,
         runId: null,
         companyId: null,
+      },
+      actor: {
+        actorType: "user",
+        actorId: "admin-1",
+        userId: "admin-1",
+        agentId: null,
+        runId: null,
+        source: "session",
       },
       renderEnvironment: null,
     });
@@ -711,6 +763,14 @@ describe.sequential("plugin tool and bridge authz", () => {
         runId: runA,
         companyId: companyA,
       },
+      actor: {
+        actorType: "user",
+        actorId: "user-1",
+        userId: "user-1",
+        agentId: null,
+        runId: runA,
+        source: "session",
+      },
       renderEnvironment: null,
     });
   });
@@ -734,6 +794,11 @@ describe.sequential("plugin tool and bridge authz", () => {
         type: "user",
         userId: null,
         companyId: companyA,
+      }),
+      actor: expect.objectContaining({
+        actorType: "user",
+        actorId: "board",
+        userId: null,
       }),
     }));
   });
@@ -771,6 +836,14 @@ describe.sequential("plugin tool and bridge authz", () => {
         runId: runA,
         companyId: companyA,
       },
+      actor: {
+        actorType: "agent",
+        actorId: agentA,
+        userId: null,
+        agentId: agentA,
+        runId: runA,
+        source: "agent_jwt",
+      },
       renderEnvironment: null,
     });
 
@@ -799,6 +872,14 @@ describe.sequential("plugin tool and bridge authz", () => {
         agentId: agentA,
         runId: runA,
         companyId: companyA,
+      },
+      actor: {
+        actorType: "agent",
+        actorId: agentA,
+        userId: null,
+        agentId: agentA,
+        runId: runA,
+        source: "agent_jwt",
       },
       renderEnvironment: null,
     });

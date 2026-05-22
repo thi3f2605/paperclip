@@ -11,6 +11,14 @@ import manifest, {
 import plugin from "../src/worker.js";
 
 const companyId = "11111111-1111-4111-8111-111111111111";
+const bridgeActor = {
+  actorType: "user" as const,
+  actorId: "signed-in-user",
+  userId: "signed-in-user",
+  agentId: null,
+  runId: null,
+  source: "session",
+};
 
 describe("Briefs managed resources", () => {
   it("declares the Briefing Analyst, skills, routines, and agent tools", () => {
@@ -70,5 +78,24 @@ describe("Briefs managed resources", () => {
       expect(routine.routineId).toBeTruthy();
       expect(routine.missingRefs).toEqual([]);
     }
+  });
+
+  it("rejects user-scoped UI bridge calls for a different user", async () => {
+    const harness = createTestHarness({ manifest });
+    await plugin.definition.setup?.(harness.ctx);
+    const victimParams = { companyId, userId: "victim-user" };
+    const context = { actor: bridgeActor };
+
+    await expect(harness.getData("page", victimParams, context)).rejects.toThrow("Briefs user scope mismatch");
+    await expect(harness.getData("preferences", victimParams, context)).rejects.toThrow("Briefs user scope mismatch");
+    await expect(harness.performAction("pin-card", {
+      ...victimParams,
+      cardId: "card-1",
+      pinned: true,
+    }, context)).rejects.toThrow("Briefs user scope mismatch");
+    await expect(harness.performAction("update-preferences", {
+      ...victimParams,
+      cadence: "daily",
+    }, context)).rejects.toThrow("Briefs user scope mismatch");
   });
 });
