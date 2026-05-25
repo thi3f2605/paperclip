@@ -99,6 +99,20 @@ export function Projects() {
     () => sortProjects(projects, sortMode),
     [projects, sortMode],
   );
+  const groupedProjects = useMemo(() => {
+    const groups = {
+      mine: [] as typeof projects,
+      other: [] as typeof projects,
+    };
+
+    for (const project of sortedProjects) {
+      const state = resourceMembershipState(membershipsQuery.data, "project", project.id);
+      if (state === "left") groups.other.push(project);
+      else groups.mine.push(project);
+    }
+
+    return groups;
+  }, [membershipsQuery.data, sortedProjects]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
@@ -144,53 +158,70 @@ export function Projects() {
       )}
 
       {projects.length > 0 && (
-        <div className="border border-border">
-          {sortedProjects.map((project) => (
-            (() => {
-              const state = resourceMembershipState(membershipsQuery.data, "project", project.id);
-              const pending = membershipMutation.isPending &&
-                membershipMutation.variables?.resourceType === "project" &&
-                membershipMutation.variables.resourceId === project.id;
-              return (
-                <EntityRow
-                  key={project.id}
-                  title={project.name}
-                  subtitle={project.description ?? undefined}
-                  reserveSubtitleSpace
-                  to={projectUrl(project)}
-                  className={state === "left" ? "group text-foreground/55" : "group"}
-                  trailing={
-                    <div className="flex items-center gap-3">
-                      {project.targetDate && (
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(project.targetDate)}
-                        </span>
-                      )}
-                      <StatusBadge status={project.status} />
-                      <MembershipAction
-                        state={state}
-                        pending={pending}
-                        pendingState={pending ? membershipMutation.variables?.state : null}
-                        resourceName={project.name}
-                        onJoin={() => membershipMutation.mutate({
-                          resourceType: "project",
-                          resourceId: project.id,
-                          resourceName: project.name,
-                          state: "joined",
-                        })}
-                        onLeave={() => membershipMutation.mutate({
-                          resourceType: "project",
-                          resourceId: project.id,
-                          resourceName: project.name,
-                          state: "left",
-                        })}
+        <div className="space-y-6">
+          {([
+            ["My Projects", groupedProjects.mine],
+            ["Other Projects", groupedProjects.other],
+          ] as const).map(([label, sectionProjects]) => {
+            if (sectionProjects.length === 0) return null;
+
+            return (
+              <section key={label} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-medium">{label}</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {sectionProjects.length} project{sectionProjects.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="border border-border">
+                  {sectionProjects.map((project) => {
+                    const state = resourceMembershipState(membershipsQuery.data, "project", project.id);
+                    const pending = membershipMutation.isPending &&
+                      membershipMutation.variables?.resourceType === "project" &&
+                      membershipMutation.variables.resourceId === project.id;
+                    return (
+                      <EntityRow
+                        key={project.id}
+                        title={project.name}
+                        subtitle={project.description ?? undefined}
+                        reserveSubtitleSpace
+                        to={projectUrl(project)}
+                        className={state === "left" ? "group text-foreground/55" : "group"}
+                        trailing={
+                          <div className="flex items-center gap-3">
+                            {project.targetDate && (
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(project.targetDate)}
+                              </span>
+                            )}
+                            <StatusBadge status={project.status} />
+                            <MembershipAction
+                              state={state}
+                              pending={pending}
+                              pendingState={pending ? membershipMutation.variables?.state : null}
+                              resourceName={project.name}
+                              onJoin={() => membershipMutation.mutate({
+                                resourceType: "project",
+                                resourceId: project.id,
+                                resourceName: project.name,
+                                state: "joined",
+                              })}
+                              onLeave={() => membershipMutation.mutate({
+                                resourceType: "project",
+                                resourceId: project.id,
+                                resourceName: project.name,
+                                state: "left",
+                              })}
+                            />
+                          </div>
+                        }
                       />
-                    </div>
-                  }
-                />
-              );
-            })()
-          ))}
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,35 +1,54 @@
 // @vitest-environment jsdom
 
+import { act, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
-import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "../context/ToastContext";
 import { Projects } from "./Projects";
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockProjectsApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
+
+const mockResourceMembershipsApi = vi.hoisted(() => ({
+  listMine: vi.fn(),
+  updateProject: vi.fn(),
+}));
+
 const mockOpenNewProject = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 
-vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
 vi.mock("@/lib/router", () => ({
-  Link: ({ children, to }: { children?: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({ children, to, ...props }: { children?: ReactNode; to: string }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
 }));
+
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
 }));
+
 vi.mock("../context/DialogContext", () => ({
   useDialogActions: () => ({ openNewProject: mockOpenNewProject }),
 }));
+
 vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: mockSetBreadcrumbs }),
 }));
 
-function project(overrides: Partial<Project>): Project {
+vi.mock("../api/projects", () => ({
+  projectsApi: mockProjectsApi,
+}));
+
+vi.mock("../api/resourceMemberships", () => ({
+  resourceMembershipsApi: mockResourceMembershipsApi,
+}));
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function makeProject(overrides: Partial<Project>): Project {
   const now = new Date("2026-05-01T00:00:00Z");
   return {
     id: "project-1",
@@ -61,6 +80,7 @@ function project(overrides: Partial<Project>): Project {
     },
     workspaces: [],
     primaryWorkspace: null,
+    managedByPlugin: null,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -68,24 +88,11 @@ function project(overrides: Partial<Project>): Project {
   };
 }
 
-async function renderProjects(container: HTMLElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let root: Root | null = null;
-
+async function flushReact() {
   await act(async () => {
-    root = createRoot(container);
-    root.render(
-      <QueryClientProvider client={queryClient}>
-        <Projects />
-      </QueryClientProvider>,
-    );
+    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
   });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-
-  return root;
 }
 
 function projectLinkNames(container: HTMLElement): string[] {
@@ -96,28 +103,33 @@ function projectLinkNames(container: HTMLElement): string[] {
 }
 
 describe("Projects", () => {
-  let root: Root | null = null;
   let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot> | null;
+  let queryClient: QueryClient;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    root = null;
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
     mockProjectsApi.list.mockResolvedValue([
-      project({
+      makeProject({
         id: "project-bravo",
         urlKey: "bravo",
         name: "Bravo",
         description: null,
         updatedAt: new Date("2026-05-02T00:00:00Z"),
       }),
-      project({
+      makeProject({
         id: "project-alpha",
         urlKey: "alpha",
         name: "Alpha",
         description: "First project",
         updatedAt: new Date("2026-05-01T00:00:00Z"),
       }),
-      project({
+      makeProject({
         id: "project-charlie",
         urlKey: "charlie",
         name: "Charlie",
@@ -125,19 +137,63 @@ describe("Projects", () => {
         updatedAt: new Date("2026-05-03T00:00:00Z"),
       }),
     ]);
+    mockResourceMembershipsApi.listMine.mockResolvedValue({
+      projectMemberships: { "project-bravo": "left" },
+      agentMemberships: {},
+      updatedAt: null,
+    });
+    mockResourceMembershipsApi.updateProject.mockResolvedValue({
+      resourceType: "project",
+      resourceId: "project-bravo",
+      state: "joined",
+      updatedAt: new Date("2026-05-02T00:00:00Z"),
+    });
   });
 
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = null;
+  afterEach(async () => {
+    const currentRoot = root;
+    if (currentRoot) {
+      await act(async () => {
+        currentRoot.unmount();
+      });
+    }
+    queryClient.clear();
     container.remove();
+    document.body.innerHTML = "";
     vi.clearAllMocks();
   });
 
-  it("sorts projects by name by default and can switch sort mode", async () => {
-    root = await renderProjects(container);
+  async function renderProjects() {
+    const currentRoot = createRoot(container);
+    root = currentRoot;
 
-    expect(projectLinkNames(container)).toEqual(["Alpha", "Bravo", "Charlie"]);
+    await act(async () => {
+      currentRoot.render(
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <Projects />
+          </ToastProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+  }
+
+  it("groups joined projects above left projects", async () => {
+    await renderProjects();
+
+    const content = container.textContent ?? "";
+    expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Alpha"));
+    expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Charlie"));
+    expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other Projects"));
+    expect(content.indexOf("Other Projects")).toBeLessThan(content.indexOf("Bravo"));
+  });
+
+  it("sorts projects by name by default and can switch sort mode", async () => {
+    await renderProjects();
+
+    expect(projectLinkNames(container)).toEqual(["Alpha", "Charlie", "Bravo"]);
 
     const select = container.querySelector("select");
     expect(select).not.toBeNull();
@@ -147,11 +203,11 @@ describe("Projects", () => {
       select!.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(projectLinkNames(container)).toEqual(["Charlie", "Bravo", "Alpha"]);
+    expect(projectLinkNames(container)).toEqual(["Charlie", "Alpha", "Bravo"]);
   });
 
   it("reserves description line height for projects without descriptions", async () => {
-    root = await renderProjects(container);
+    await renderProjects();
 
     const bravoLink = Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).find((link) =>
       link.textContent?.includes("Bravo"),
