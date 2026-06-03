@@ -15,54 +15,49 @@
     <text x="48" y="97" font-size="14" stroke="none" fill="#000">Conference room</text>
   </g>
   <rect x="16" y="124" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="138" font-size="14" stroke="none" fill="#000">New task</text>
-  <rect x="16" y="164" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="178" font-size="14" stroke="none" fill="#666">Dashboard</text>
-  <rect x="16" y="204" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="218" font-size="14" stroke="none" fill="#666">Inbox</text>
+  <text x="48" y="138" font-size="14" stroke="none" fill="#000">New Task</text>
+  <rect x="16" y="160" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="174" font-size="14" stroke="none" fill="#666">Dashboard</text>
+  <rect x="16" y="196" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="210" font-size="14" stroke="none" fill="#666">Inbox</text>
 
   <!-- WORK -->
-  <text x="16" y="258" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">WORK</text>
-  <rect x="16" y="272" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="286" font-size="14" stroke="none" fill="#666">Issues</text>
-  <rect x="16" y="312" width="18" height="15" rx="2" fill="#fff" stroke="#000" />
-  <path d="M16 315 l6 0 l2 -3 l4 0" fill="none" stroke="#000" />
-  <text x="48" y="326" font-size="14" stroke="none" fill="#000">Projects</text>
-  <rect x="16" y="352" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="366" font-size="14" stroke="none" fill="#000">Artifacts</text>
-  <rect x="16" y="392" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="406" font-size="14" stroke="none" fill="#666">Routines</text>
-  <rect x="16" y="432" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="446" font-size="14" stroke="none" fill="#666">Goals</text>
-
-  <!-- PROJECTS -->
-  <text x="16" y="486" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">PROJECTS</text>
-  <g>
-    <rect x="16" y="500" width="22" height="18" rx="5" fill="#e6e6e6" stroke="#666" />
-    <path d="M21 506 l5 0 l1.5 -2 l5 0 l0 10 l-11.5 0 z" fill="#fff" stroke="#666" />
-    <text x="48" y="514" font-size="14" stroke="none" fill="#666">Onboarding v3</text>
-  </g>
-  <g>
-    <rect x="16" y="540" width="22" height="18" rx="5" fill="#e6e6e6" stroke="#666" />
-    <path d="M21 546 l5 0 l1.5 -2 l5 0 l0 10 l-11.5 0 z" fill="#fff" stroke="#666" />
-    <text x="48" y="554" font-size="14" stroke="none" fill="#666">NUX hardening</text>
-  </g>
+  <text x="16" y="248" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">WORK</text>
+  <rect x="16" y="260" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="274" font-size="14" stroke="none" fill="#666">Tasks</text>
+  <rect x="16" y="296" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="310" font-size="14" stroke="none" fill="#666">Routines</text>
+  <rect x="16" y="332" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="346" font-size="14" stroke="none" fill="#666">Goals</text>
+  <rect x="16" y="368" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="382" font-size="14" stroke="none" fill="#666">Workspaces</text>
+  <rect x="16" y="404" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="418" font-size="14" stroke="none" fill="#000">Artifacts</text>
+  <rect x="16" y="440" width="18" height="15" rx="2" fill="#fff" stroke="#000" />
+  <path d="M16 443 l6 0 l2 -3 l4 0" fill="none" stroke="#000" />
+  <text x="48" y="454" font-size="14" stroke="none" fill="#000">Projects</text>
 
   <!-- AGENTS -->
-  <text x="16" y="594" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">AGENTS</text>
-  <circle cx="25" cy="614" r="9" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="619" font-size="14" stroke="none" fill="#666">ClaudeCoder</text>
-  <circle cx="300" cy="614" r="3" fill="#000" stroke="none" />
-  <text x="312" y="618" font-size="12" stroke="none" fill="#666">2 live</text>
-  <circle cx="25" cy="650" r="9" fill="#e6e6e6" stroke="#666" />
-  <text x="48" y="655" font-size="14" stroke="none" fill="#666">QA-Bot</text>
-  <circle cx="300" cy="650" r="3" fill="#000" stroke="none" />
-  <text x="312" y="654" font-size="12" stroke="none" fill="#666">1 live</text>
+  <text x="16" y="498" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">AGENTS</text>
+  <circle cx="25" cy="518" r="9" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="523" font-size="14" stroke="none" fill="#666">ClaudeCoder</text>
+  <circle cx="300" cy="518" r="3" fill="#000" stroke="none" />
+  <text x="312" y="522" font-size="12" stroke="none" fill="#666">2 live</text>
+  <circle cx="25" cy="554" r="9" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="559" font-size="14" stroke="none" fill="#666">QA-Bot</text>
+  <circle cx="300" cy="554" r="3" fill="#000" stroke="none" />
+  <text x="312" y="558" font-size="12" stroke="none" fill="#666">1 live</text>
+  <text x="48" y="595" font-size="14" stroke="none" fill="#000">See all agents →</text>
+
+  <!-- COMPANY -->
+  <text x="16" y="639" font-size="12" font-weight="600" letter-spacing="1" stroke="none" fill="#666">COMPANY</text>
+  <rect x="16" y="651" width="18" height="18" rx="3" fill="#e6e6e6" stroke="#666" />
+  <text x="48" y="665" font-size="14" stroke="none" fill="#666">Org · Skills · Costs · Activity · Settings</text>
 
   <!-- bottom tab bar (persistent) -->
   <line x1="0" y1="748" x2="375" y2="748" stroke="#666" />
   <text x="40" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#666">Home</text>
-  <text x="120" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#666">Issues</text>
+  <text x="120" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#666">Tasks</text>
   <text x="200" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#000">＋</text>
   <text x="270" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#666">Agents</text>
   <text x="340" y="784" font-size="12" text-anchor="middle" stroke="none" fill="#666">Inbox</text>
@@ -71,7 +66,7 @@
   <g data-region="annotations">
     <rect x="8" y="72" width="359" height="40" fill="none" stroke="#d33" stroke-dasharray="6 3" />
     <g transform="translate(355,92)"><circle r="10" fill="#fff" stroke="#d33" stroke-dasharray="4 2" /><text y="4" font-size="12" font-weight="700" text-anchor="middle" stroke="none" fill="#d33">1</text></g>
-    <rect x="8" y="500" width="359" height="58" fill="none" stroke="#d33" stroke-dasharray="6 3" />
-    <g transform="translate(355,528)"><circle r="10" fill="#fff" stroke="#d33" stroke-dasharray="4 2" /><text y="4" font-size="12" font-weight="700" text-anchor="middle" stroke="none" fill="#d33">5</text></g>
+    <rect x="8" y="260" width="359" height="20" fill="none" stroke="#d33" stroke-dasharray="6 3" />
+    <g transform="translate(355,270)"><circle r="10" fill="#fff" stroke="#d33" stroke-dasharray="4 2" /><text y="4" font-size="12" font-weight="700" text-anchor="middle" stroke="none" fill="#d33">3</text></g>
   </g>
 </svg>

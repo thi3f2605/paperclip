@@ -5,10 +5,10 @@
   <!-- sidebar stub for orientation -->
   <rect x="0" y="0" width="280" height="800" fill="#fff" stroke="#666" />
   <text x="16" y="30" font-size="14" font-weight="700" stroke="none" fill="#666">Paperclip App</text>
-  <rect x="8" y="120" width="264" height="32" fill="#e6e6e6" stroke="none" />
-  <text x="24" y="141" font-size="14" stroke="none" fill="#000">Projects</text>
-  <text x="24" y="93" font-size="14" stroke="none" fill="#999">Work</text>
-  <text x="24" y="189" font-size="14" stroke="none" fill="#999">Artifacts</text>
+  <text x="16" y="93" font-size="12" letter-spacing="1" stroke="none" fill="#999">WORK</text>
+  <text x="24" y="121" font-size="14" stroke="none" fill="#999">Artifacts</text>
+  <rect x="8" y="136" width="264" height="32" fill="#e6e6e6" stroke="none" />
+  <text x="24" y="157" font-size="14" stroke="none" fill="#000">Projects</text>
 
   <!-- ===== CONTENT ===== -->
   <!-- breadcrumb + title -->

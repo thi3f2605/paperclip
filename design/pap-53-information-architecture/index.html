@@ -111,8 +111,8 @@
         <a href="#s3"><span class="num">3</span>Agents list view</a>
         <a href="#s4"><span class="num">4</span>Agents section states</a>
         <a href="#s5"><span class="num">5</span>Project tile customize</a>
-        <h2>Open questions</h2>
-        <a href="#open"><span class="num">?</span>For reviewer</a>
+        <h2>Resolved decisions</h2>
+        <a href="#open"><span class="num">✓</span>Board answers</a>
       </nav>
     </details>
 
@@ -122,6 +122,7 @@
         <h1>Information Architecture — left nav & related views</h1>
         <p>Low-fidelity wireframes for the proposed left-navigation restructure and the two new list views (Projects, Agents). Monochrome and structural only — color, spacing, and final iconography are intentionally not represented. Click any wireframe to zoom.</p>
         <div class="pills">
+          <span class="pill">Revised v2 · per board feedback</span>
           <span class="pill">5 screens</span>
           <span class="pill">Desktop + mobile</span>
           <span class="pill">Lo-fi · monochrome</span>
@@ -132,15 +133,18 @@
       <section id="summary" class="full">
         <div class="lede">Overview</div>
         <h2>What this set covers</h2>
-        <p class="desc">Six discrete changes to the main app's information architecture, all sketched below.</p>
+        <p class="desc">Revised after board review. Nav structure, ordering, and the open questions are now locked per the board's direction.</p>
         <div class="notes">
           <ul>
-            <li><b>Conference room</b> — new placeholder nav item above "New task", chat-bubble icon (screen 1).</li>
-            <li><b>New Issue → New task</b> — renamed; label uses the standard nav text color, not the muted treatment it has today (screen 1).</li>
-            <li><b>Artifacts</b> — new item in the Work section (screen 1).</li>
-            <li><b>Projects as a Work nav item</b> — opens an all-projects list view: per-row overview, task count, budget; row click opens today's project detail (screens 1 & 2).</li>
-            <li><b>Project tiles</b> — colored squircle becomes a neutral gray rounded rectangle with a folder icon; color + icon are user-customizable (screens 1 & 5).</li>
-            <li><b>Agents section</b> — show active agents only when any are running; otherwise show up to 5 recently-active with "See all" → agents list view with per-row key actions (screens 3 & 4).</li>
+            <li><b>Top level</b> (no section label): Conference room, New Task, Dashboard, Inbox.</li>
+            <li><b>Work</b> (exact order): Tasks, Routines, Goals, Workspaces, Artifacts, Projects.</li>
+            <li><b>Conference room</b> — new placeholder top-level item, chat-bubble icon, empty page for now (screen 1).</li>
+            <li><b>New Issue → New Task</b> — renamed; standard nav label color (screen 1).</li>
+            <li><b>Issues → Tasks</b> — renamed <i>globally</i> across the frontend (nav item, page, all references).</li>
+            <li><b>Artifacts</b> — new Work item; <b>Projects</b> — new Work item at the bottom of Work, opens the projects list view (screens 1 &amp; 2).</li>
+            <li><b>Removed</b> — the old collapsible PROJECTS section (per-project rows in the sidebar) is deleted (screen 1).</li>
+            <li><b>Project tiles</b> — neutral gray rounded rectangle + folder icon; <b>color-only</b> customization this phase, folder icon fixed (screens 2 &amp; 5).</li>
+            <li><b>Agents section</b> — active agents only when any are running; otherwise up to 5 recently-active + "See all agents" → agents list view with per-row key actions (screens 3 &amp; 4).</li>
           </ul>
         </div>
       </section>
@@ -163,14 +167,15 @@
             <div class="notes">
               <h3>Annotations</h3>
               <ul>
-                <li><b>1</b> — Conference room: new item above New task, chat-bubble icon.</li>
-                <li><b>2</b> — New Issue → New task; standard nav label color.</li>
-                <li><b>3</b> — Projects: new Work nav item, opens the list view.</li>
+                <li><b>1</b> — Conference room: new top-level item, chat-bubble icon.</li>
+                <li><b>2</b> — New Issue → New Task; standard nav label color.</li>
+                <li><b>3</b> — Issues → Tasks (renamed globally).</li>
                 <li><b>4</b> — Artifacts: new Work item.</li>
-                <li><b>5</b> — Project tiles: gray rounded rectangle + folder icon.</li>
-                <li><b>6</b> — Agents section adapts to active/recent (screen 4).</li>
+                <li><b>5</b> — Projects: new Work item (bottom of Work), opens the list view.</li>
+                <li><b>6</b> — Removed: the old collapsible PROJECTS section.</li>
+                <li><b>7</b> — Agents: active/recent + "See all agents" (screen 4).</li>
               </ul>
-              <div class="why"><b>Why this changes:</b> Promotes the two highest-traffic destinations (Projects, a future Conference room) into stable nav, and makes the Work section the single home for cross-cutting views (Issues, Projects, Artifacts). On mobile the sidebar is a full-height drawer; the bottom tab bar is unchanged.</div>
+              <div class="why"><b>Why this changes:</b> Locks the nav to the board's specified structure and order. Work becomes the single home for cross-cutting views; per-project rows leave the sidebar entirely (you reach a project via Projects → list → detail). On mobile the sidebar is a full-height drawer; the bottom tab bar is unchanged.</div>
             </div>
           </div>
         </div>
@@ -202,7 +207,7 @@
                 <li><b>2</b> — Overview = project description, one line, truncated.</li>
                 <li><b>3</b> — Task count + budget + status per row.</li>
               </ul>
-              <div class="why"><b>Why this changes:</b> Gives projects a real index page instead of only the sidebar list. On mobile each row reflows to a card with the metrics on a second line. Note: task count and budget are not on the Project type today — they need wiring (see open questions).</div>
+              <div class="why"><b>Why this changes:</b> Gives projects a real index page instead of only the sidebar list. On mobile each row reflows to a card with the metrics on a second line. Task count and budget are not on the Project type today — the board approved adding a lightweight count + budget lookup for these rows.</div>
             </div>
           </div>
         </div>
@@ -258,28 +263,29 @@
       <section id="s5" class="full">
         <div class="lede">Screen 5 · Projects (detail)</div>
         <h2><span class="step-num">5.</span>Project tile — customize icon &amp; color</h2>
-        <p class="desc">Default neutral tile and the picker opened by clicking it. Desktop-only overlay.</p>
-        <div class="wire" data-zoom data-caption="05 · Project tile customize">
+        <p class="desc">Default neutral tile and the color picker opened by clicking it. Color-only this phase; the folder icon is fixed. Desktop-only overlay.</p>
+        <div class="wire" data-zoom data-caption="05 · Project tile color">
           <div class="label"><span>05-project-customize.svg</span><span>1280×800</span></div>
-          <img src="wireframes/05-project-customize.svg" alt="Project tile customize wireframe" />
+          <img src="wireframes/05-project-customize.svg" alt="Project tile color wireframe" />
         </div>
         <div class="notes">
-          <div class="why"><b>Why this changes:</b> Default tiles are neutral so the sidebar reads calmly; users opt into color/icon only where it helps them scan. The same tile + picker is reused in the sidebar PROJECTS section and the Projects list rows. <code>project.color</code> already exists; an icon field is new.</div>
+          <div class="why"><b>Why this changes:</b> Per board direction, build <b>color only first</b> — every tile keeps a folder icon (custom-icon picker deferred). Default tiles are neutral gray. Since the per-project sidebar list is removed, tiles live in the Projects list rows and the project detail header, so the color control attaches to the project itself. <code>project.color</code> already exists — no new field needed this phase.</div>
         </div>
       </section>
 
       <section id="open">
-        <div class="lede">For reviewer</div>
-        <h2>Open questions</h2>
+        <div class="lede">Board answers</div>
+        <h2>Resolved decisions</h2>
         <div class="notes">
           <ul>
-            <li><b>Terminology</b> — The issue calls items "tasks (formerly issues)". Do you want the <i>Issues</i> nav item / page renamed to <i>Tasks</i> globally, or only the "New task" button + the "Tasks" count on project rows for now?</li>
-            <li><b>Conference room</b> — Placeholder only: it appears in nav but routes to an empty page for now. Confirm that's the intended scope.</li>
-            <li><b>Projects: dual presence</b> — Keep both the new "Projects" Work nav item (→ list view) <i>and</i> the existing collapsible PROJECTS section (individual projects)? The wireframes assume yes.</li>
-            <li><b>Row data</b> — Task count and budget aren't on the Project type today. OK to add a lightweight count/budget lookup for the list rows (slightly more backend work)?</li>
-            <li><b>Project icon</b> — Customizable icon needs a new <code>project.icon</code> field + picker. Confirm we should build icon customization now vs. color-only first.</li>
-            <li><b>Ordering within Work</b> — Proposed order: Issues, Projects, Artifacts, Routines, Goals. Adjust freely.</li>
+            <li><b>Terminology</b> — Issues → <b>Tasks</b>, renamed <i>globally</i> on the frontend.</li>
+            <li><b>Conference room</b> — Placeholder only, empty page for now. <b>Confirmed.</b></li>
+            <li><b>Projects: dual presence</b> — <b>No.</b> Delete the existing collapsible PROJECTS section; projects are reached only via the Projects list view.</li>
+            <li><b>Row data</b> — <b>Yes</b>, add a lightweight task-count + budget lookup for the list rows.</li>
+            <li><b>Project icon</b> — <b>Color only first.</b> Keep a fixed folder icon for every tile; defer custom-icon picker.</li>
+            <li><b>Work order</b> — <b>Tasks · Routines · Goals · Workspaces · Artifacts · Projects.</b></li>
           </ul>
+          <div class="why"><b>Nesting confirmed:</b> Projects (nav) → projects list in the main pane → row → project detail. "See all agents" → agents list in the main pane → row → agent detail.</div>
         </div>
       </section>
 
