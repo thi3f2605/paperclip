@@ -1,5 +1,13 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
 export {
+  asBoolean,
+  asString,
+  asStringArray,
+  isPlainRecord as isFrontmatterPlainRecord,
+  parseFrontmatterMarkdown,
+  type MarkdownDoc,
+} from "./frontmatter.js";
+export {
   COMPANY_STATUSES,
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,

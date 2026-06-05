@@ -21,6 +21,7 @@ import type {
   CompanyPortabilitySource,
 } from "@paperclipai/shared";
 import { normalizeAgentUrlKey } from "@paperclipai/shared";
+import { parseFrontmatterMarkdown } from "@paperclipai/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
 import { companyPortabilityService } from "./company-portability.js";
@@ -509,116 +510,8 @@ function mergePlainRecords(
   return merged;
 }
 
-interface MarkdownDoc {
-  frontmatter: Record<string, unknown>;
-  body: string;
-}
-
-function parseYamlScalar(rawValue: string): unknown {
-  const trimmed = rawValue.trim();
-  if (trimmed === "") return "";
-  if (trimmed === "null" || trimmed === "~") return null;
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "[]") return [];
-  if (trimmed === "{}") return {};
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  if (trimmed.startsWith("\"") || trimmed.startsWith("[") || trimmed.startsWith("{")) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      return trimmed;
-    }
-  }
-  return trimmed;
-}
-
-function parseYamlFrontmatter(raw: string): Record<string, unknown> {
-  const lines = raw
-    .split("\n")
-    .map((line) => ({
-      indent: line.match(/^ */)?.[0].length ?? 0,
-      content: line.trim(),
-    }))
-    .filter((line) => line.content.length > 0 && !line.content.startsWith("#"));
-  if (lines.length === 0) return {};
-  const parsed = parseYamlBlock(lines, 0, lines[0]!.indent);
-  return isPlainRecord(parsed.value) ? parsed.value : {};
-}
-
-function parseYamlBlock(
-  lines: Array<{ indent: number; content: string }>,
-  startIndex: number,
-  indentLevel: number,
-): { value: unknown; nextIndex: number } {
-  let index = startIndex;
-  if (index >= lines.length || lines[index]!.indent < indentLevel) {
-    return { value: {}, nextIndex: index };
-  }
-
-  const isArray = lines[index]!.indent === indentLevel && lines[index]!.content.startsWith("-");
-  if (isArray) {
-    const values: unknown[] = [];
-    while (index < lines.length) {
-      const line = lines[index]!;
-      if (line.indent < indentLevel) break;
-      if (line.indent !== indentLevel || !line.content.startsWith("-")) break;
-
-      const remainder = line.content.slice(1).trim();
-      index += 1;
-      if (!remainder) {
-        const nested = parseYamlBlock(lines, index, indentLevel + 2);
-        values.push(nested.value);
-        index = nested.nextIndex;
-        continue;
-      }
-
-      values.push(parseYamlScalar(remainder));
-    }
-    return { value: values, nextIndex: index };
-  }
-
-  const record: Record<string, unknown> = {};
-  while (index < lines.length) {
-    const line = lines[index]!;
-    if (line.indent < indentLevel) break;
-    if (line.indent !== indentLevel) {
-      index += 1;
-      continue;
-    }
-
-    const separatorIndex = line.content.indexOf(":");
-    if (separatorIndex <= 0) {
-      index += 1;
-      continue;
-    }
-    const key = line.content.slice(0, separatorIndex).trim();
-    const remainder = line.content.slice(separatorIndex + 1).trim();
-    index += 1;
-    if (remainder) {
-      record[key] = parseYamlScalar(remainder);
-      continue;
-    }
-    const nested = parseYamlBlock(lines, index, indentLevel + 2);
-    record[key] = nested.value;
-    index = nested.nextIndex;
-  }
-  return { value: record, nextIndex: index };
-}
-
-function parseFrontmatterMarkdown(raw: string): MarkdownDoc {
-  const normalized = raw.replace(/\r\n/g, "\n");
-  if (!normalized.startsWith("---\n")) {
-    return { frontmatter: {}, body: normalized.trim() };
-  }
-  const closing = normalized.indexOf("\n---\n", 4);
-  if (closing < 0) {
-    return { frontmatter: {}, body: normalized.trim() };
-  }
-  return {
-    frontmatter: parseYamlFrontmatter(normalized.slice(4, closing).trim()),
-    body: normalized.slice(closing + 5).trim(),
-  };
+function parseYamlDocument(raw: string): Record<string, unknown> {
+  return parseFrontmatterMarkdown(`---\n${raw.trim()}\n---\n`).frontmatter;
 }
 
 function renderSimpleMarkdown(frontmatter: Record<string, unknown>, body: string) {
@@ -784,7 +677,11 @@ async function readCatalogTeamSourceFiles(team: CatalogTeam): Promise<Record<str
 /**
  * Default safe adapter for catalog agents imported through the agent-safe path.
  */
-const DEFAULT_SAFE_CATALOG_ADAPTER_TYPE = "claude_local";
+const FALLBACK_SAFE_CATALOG_ADAPTER_TYPE = "claude_local";
+
+function defaultSafeCatalogAdapterType() {
+  return process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim() || FALLBACK_SAFE_CATALOG_ADAPTER_TYPE;
+}
 
 /**
  * Bundled catalog agents declare no adapter in their `AGENTS.md` frontmatter, so
@@ -799,11 +696,12 @@ const DEFAULT_SAFE_CATALOG_ADAPTER_TYPE = "claude_local";
 function withSafeCatalogAdapterDefaults(
   agentSlugs: string[],
   callerOverrides: CompanyPortabilityImport["adapterOverrides"],
+  defaultAdapterType: string,
 ): Record<string, CompanyPortabilityAdapterOverride> {
   const merged: Record<string, CompanyPortabilityAdapterOverride> = { ...(callerOverrides ?? {}) };
   for (const slug of agentSlugs) {
     if (merged[slug]) continue;
-    merged[slug] = { adapterType: DEFAULT_SAFE_CATALOG_ADAPTER_TYPE };
+    merged[slug] = { adapterType: defaultAdapterType };
   }
   return merged;
 }
@@ -891,9 +789,9 @@ export function teamsCatalogService(db: Db) {
     const files = await readCatalogTeamSourceFiles(team);
     const existingExtension =
       typeof files[".paperclip.yaml"] === "string"
-        ? parseYamlFrontmatter(files[".paperclip.yaml"])
+        ? parseYamlDocument(files[".paperclip.yaml"])
         : {};
-    const generatedExtension = parseYamlFrontmatter(await renderCatalogProvenanceYaml(team, targetManager));
+    const generatedExtension = parseYamlDocument(await renderCatalogProvenanceYaml(team, targetManager));
     files[".paperclip.yaml"] = renderYamlFile(mergePlainRecords(existingExtension, generatedExtension));
     rewriteAgentCatalogSkillRefs(team, files);
 
@@ -995,11 +893,13 @@ export function teamsCatalogService(db: Db) {
       throw unprocessable(`Catalog team source preparation failed: ${prepared.errors.join("; ")}`);
     }
 
+    const defaultAdapterType = defaultSafeCatalogAdapterType();
     const importInput: CompanyPortabilityImport = {
       ...buildPortabilityInput(companyId, prepared.source, options),
       adapterOverrides: withSafeCatalogAdapterDefaults(
         prepared.team.agentSlugs,
         options.adapterOverrides,
+        defaultAdapterType,
       ),
       secretValues: options.secretValues,
     };
@@ -1018,10 +918,9 @@ export function teamsCatalogService(db: Db) {
       ...importPreview.warnings,
       ...(defaultedAdapterSlugs.length > 0
         ? [
-            `Catalog agents without explicit overrides (${defaultedAdapterSlugs.join(", ")}) default to ${DEFAULT_SAFE_CATALOG_ADAPTER_TYPE}. Pass adapterOverrides to use a different supported adapter.`,
+            `Catalog agents without explicit overrides (${defaultedAdapterSlugs.join(", ")}) default to ${defaultAdapterType}. Pass adapterOverrides or PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE to use a different supported adapter.`,
           ]
         : []),
-      ...await prepareSkillInstalls(companyId, prepared),
     ];
     const result = await portability.importBundle(
       importInput,
@@ -1031,6 +930,7 @@ export function teamsCatalogService(db: Db) {
         sourceCompanyId: companyId,
       },
     );
+    warnings.push(...await prepareSkillInstalls(companyId, prepared));
     result.warnings.push(...warnings);
     await logCatalogEvent("company.team_catalog_installed", companyId, prepared.team, options.actor, {
       warningCount: result.warnings.length,

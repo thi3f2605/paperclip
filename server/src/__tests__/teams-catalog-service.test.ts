@@ -226,6 +226,16 @@ describe("teamsCatalogService", () => {
     expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
   });
 
+  it("does not install catalog skills when bundle import fails", async () => {
+    mockCompanyPortabilityService.importBundle.mockRejectedValueOnce(new Error("import failed"));
+    const svc = teamsCatalogService({} as any);
+
+    await expect(svc.installCatalogTeam("company-1", "core-exec-team")).rejects.toThrow("import failed");
+
+    expect(mockCompanySkillService.installFromCatalog).not.toHaveBeenCalled();
+    expect(mockCompanySkillService.importFromSource).not.toHaveBeenCalled();
+  });
+
   it("injects safe claude_local adapter defaults for every bundled agent when no overrides are supplied", async () => {
     const svc = teamsCatalogService({} as any);
 
@@ -237,6 +247,29 @@ describe("teamsCatalogService", () => {
       cto: { adapterType: "claude_local" },
       qa: { adapterType: "claude_local" },
     });
+  });
+
+  it("uses the configured safe adapter default for bundled agents", async () => {
+    const previousDefault = process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
+    process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = "opencode_local";
+    try {
+      const svc = teamsCatalogService({} as any);
+
+      await svc.installCatalogTeam("company-1", "core-exec-team");
+
+      const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
+      expect(importInput.adapterOverrides).toEqual({
+        ceo: { adapterType: "opencode_local" },
+        cto: { adapterType: "opencode_local" },
+        qa: { adapterType: "opencode_local" },
+      });
+    } finally {
+      if (previousDefault === undefined) {
+        delete process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
+      } else {
+        process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = previousDefault;
+      }
+    }
   });
 
   it("supplies safe adapter defaults for product-design and product-engineering installs", async () => {
