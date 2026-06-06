@@ -4,6 +4,17 @@ export const queryKeys = {
     detail: (id: string) => ["companies", id] as const,
     stats: ["companies", "stats"] as const,
   },
+  tools: {
+    applications: (companyId: string) => ["tools", companyId, "applications"] as const,
+    connections: (companyId: string) => ["tools", companyId, "connections"] as const,
+    connection: (connectionId: string) => ["tools", "connection", connectionId] as const,
+    catalog: (connectionId: string) => ["tools", "connection", connectionId, "catalog"] as const,
+    stdioTemplates: (companyId: string) => ["tools", companyId, "stdio-templates"] as const,
+    runtimeSlots: (companyId: string) => ["tools", companyId, "runtime-slots"] as const,
+    liveRuntimeSlots: (companyId: string) => ["tools", companyId, "runtime-slots", "live"] as const,
+    trustRules: (companyId: string) => ["tools", companyId, "trust-rules"] as const,
+    audit: (companyId: string, limit: number) => ["tools", companyId, "audit", limit] as const,
+  },
   companySkills: {
     list: (companyId: string) => ["company-skills", companyId] as const,
     detail: (companyId: string, skillId: string) => ["company-skills", companyId, skillId] as const,
