@@ -394,6 +394,10 @@ const createIssueBaseSchema = z.object({
   executionWorkspacePreference: z.enum(ISSUE_EXECUTION_WORKSPACE_PREFERENCES).optional().nullable(),
   executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
+  watchdog: z.object({
+    agentId: z.string().uuid(),
+    instructions: multilineTextSchema.optional().nullable(),
+  }).strict().optional().nullable(),
 });
 
 export const createIssueInputSchema = createIssueBaseSchema.extend({
@@ -403,6 +407,13 @@ export const createIssueInputSchema = createIssueBaseSchema.extend({
 export const createIssueSchema = withCreateIssueStatusDefault(createIssueBaseSchema);
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
+
+export const upsertIssueWatchdogSchema = z.object({
+  agentId: z.string().uuid(),
+  instructions: multilineTextSchema.optional().nullable(),
+}).strict();
+
+export type UpsertIssueWatchdog = z.infer<typeof upsertIssueWatchdogSchema>;
 
 export const createChildIssueSchema = withCreateIssueStatusDefault(createIssueBaseSchema
   .omit({
@@ -430,7 +441,7 @@ export const createIssueLabelSchema = z.object({
 
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
-export const updateIssueSchema = createIssueBaseSchema.partial().extend({
+export const updateIssueSchema = createIssueBaseSchema.omit({ watchdog: true }).partial().extend({
   requestDepth: issueRequestDepthInputSchema.optional(),
   assigneeAgentId: z.string().trim().min(1).optional().nullable(),
   comment: multilineTextSchema.pipe(z.string().min(1)).optional(),

@@ -40,6 +40,7 @@ import {
   feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
+  upsertIssueWatchdogSchema,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
@@ -81,6 +82,7 @@ import {
   ISSUE_LIST_MAX_LIMIT,
   issueReferenceService,
   issueService,
+  taskWatchdogService,
   clampIssueListLimit,
   documentService,
   documentAnnotationService,
@@ -1043,6 +1045,7 @@ export function issueRoutes(
   const documentAnnotationsSvc = documentAnnotationService(db);
   const issueReferencesSvc = issueReferenceService(db);
   const issueThreadInteractionsSvc = issueThreadInteractionService(db);
+  const taskWatchdogsSvc = taskWatchdogService(db);
   const routinesSvc = routineService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
   });
@@ -2934,6 +2937,97 @@ export function issueRoutes(
     });
   });
 
+  router.get("/issues/:id/watchdog", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    res.json(await taskWatchdogsSvc.getActiveForIssue(issue.companyId, issue.id));
+  });
+
+  router.put("/issues/:id/watchdog", validate(upsertIssueWatchdogSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)) return;
+
+    const actor = getActorInfo(req);
+    const { watchdog, created } = await taskWatchdogsSvc.upsertForIssue(issue.companyId, issue.id, {
+      agentId: req.body.agentId,
+      instructions: req.body.instructions,
+      actor: {
+        agentId: actor.agentId,
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        runId: actor.runId,
+      },
+    });
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: created ? "issue.watchdog_created" : "issue.watchdog_updated",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        identifier: issue.identifier,
+        watchdogId: watchdog.id,
+        watchdogAgentId: watchdog.watchdogAgentId,
+        instructionsChanged: true,
+      },
+    });
+    res.json(watchdog);
+  });
+
+  router.delete("/issues/:id/watchdog", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)) return;
+
+    const actor = getActorInfo(req);
+    const disabled = await taskWatchdogsSvc.disableForIssue(issue.companyId, issue.id, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      runId: actor.runId,
+    });
+    if (disabled) {
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.watchdog_removed",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          identifier: issue.identifier,
+          watchdogId: disabled.id,
+          watchdogAgentId: disabled.watchdogAgentId,
+        },
+      });
+    }
+    res.json({ ok: true });
+  });
+
   router.get("/issues/:id/recovery-actions", async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
@@ -4386,6 +4480,7 @@ export function issueRoutes(
       ...(sourceTrust ? { sourceTrust } : {}),
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      watchdogActorRunId: actor.runId,
     });
     await issueReferencesSvc.syncIssue(issue.id);
     const referenceSummary = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
@@ -4435,6 +4530,25 @@ export function issueRoutes(
           timeoutAt: executionPolicy.monitor.timeoutAt ?? null,
           maxAttempts: executionPolicy.monitor.maxAttempts ?? null,
           recoveryPolicy: executionPolicy.monitor.recoveryPolicy ?? null,
+        },
+      });
+    }
+
+    if (issue.watchdog) {
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.watchdog_created",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          identifier: issue.identifier,
+          watchdogId: issue.watchdog.id,
+          watchdogAgentId: issue.watchdog.watchdogAgentId,
+          source: "issue.create",
         },
       });
     }
@@ -4508,6 +4622,7 @@ export function issueRoutes(
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
       actorAgentId: actor.agentId,
       actorUserId: actor.actorType === "user" ? actor.actorId : null,
+      watchdogActorRunId: actor.runId,
     });
 
     await logActivity(db, {
@@ -4550,6 +4665,26 @@ export function issueRoutes(
           timeoutAt: executionPolicy.monitor.timeoutAt ?? null,
           maxAttempts: executionPolicy.monitor.maxAttempts ?? null,
           recoveryPolicy: executionPolicy.monitor.recoveryPolicy ?? null,
+        },
+      });
+    }
+
+    if (issue.watchdog) {
+      await logActivity(db, {
+        companyId: parent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.watchdog_created",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          identifier: issue.identifier,
+          watchdogId: issue.watchdog.id,
+          watchdogAgentId: issue.watchdog.watchdogAgentId,
+          source: "issue.child_create",
+          parentId: parent.id,
         },
       });
     }
