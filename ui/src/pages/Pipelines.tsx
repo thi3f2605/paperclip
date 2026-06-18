@@ -2361,13 +2361,13 @@ function ActivePipelineWorkBanner({ activeWork }: { activeWork: PipelineCaseActi
   return (
     <section
       aria-label={title}
-      className="mb-5 flex flex-col gap-3 border-y border-emerald-300 bg-emerald-50 py-4 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100 md:flex-row md:items-center md:justify-between"
+      className="mb-5 flex flex-col gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-4 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/25 dark:text-blue-100 md:flex-row md:items-center md:justify-between"
     >
       <div className="flex min-w-0 gap-3">
-        <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
+        <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
             {title}
           </h2>
           <p className="mt-1 text-sm opacity-85">
@@ -2383,7 +2383,7 @@ function ActivePipelineWorkBanner({ activeWork }: { activeWork: PipelineCaseActi
         asChild
         size="sm"
         variant="outline"
-        className="border-emerald-300 bg-transparent hover:bg-emerald-100 dark:border-emerald-900/70 dark:hover:bg-emerald-950/40"
+        className="border-blue-300 bg-transparent hover:bg-blue-100 dark:border-blue-900/70 dark:hover:bg-blue-950/40"
       >
         <Link to={issuePath}>
           <ExternalLink className="mr-2 h-4 w-4" />
