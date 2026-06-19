@@ -89,5 +89,5 @@ export function titleForPendingWorkMode(mode: IssueWorkMode, conferenceRoomChat:
   if (mode === "planning") {
     return `${conferenceRoomChat ? "Plan" : "Planning"} mode is on for this submission. Click to change.`;
   }
-  return "Agent mode for this submission. Click to change.";
+  return `${conferenceRoomChat ? "Agent" : "Standard"} mode for this submission. Click to change.`;
 }

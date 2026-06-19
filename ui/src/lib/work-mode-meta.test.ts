@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextWorkMode, workModeMetaList } from "./work-mode-meta";
+import { nextWorkMode, titleForPendingWorkMode, workModeMetaList } from "./work-mode-meta";
 
 describe("work mode metadata", () => {
   it("orders issue work modes as agent, planning, then ask", () => {
@@ -12,5 +12,10 @@ describe("work mode metadata", () => {
     expect(nextWorkMode("standard", true)).toBe("planning");
     expect(nextWorkMode("planning", true)).toBe("ask");
     expect(nextWorkMode("ask", true)).toBe("standard");
+  });
+
+  it("matches standard mode tooltip copy to the active surface", () => {
+    expect(titleForPendingWorkMode("standard", false)).toBe("Standard mode for this submission. Click to change.");
+    expect(titleForPendingWorkMode("standard", true)).toBe("Agent mode for this submission. Click to change.");
   });
 });

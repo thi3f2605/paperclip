@@ -3914,11 +3914,13 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       <span>{option.label}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">⌘.</span>
                       {active ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                     </button>
                   );
                 })}
+                <div className="mt-1 border-t px-2 py-1.5 text-[10px] text-muted-foreground">
+                  Cmd/Ctrl+. cycles modes
+                </div>
               </PopoverContent>
             </Popover>
           ) : null}
