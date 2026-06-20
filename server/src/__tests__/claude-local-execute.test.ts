@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { claudeSessionCwdMatchesExecutionTarget, execute } from "@paperclipai/adapter-claude-local/server";
+import {
+  claudeSessionCwdMatchesExecutionTarget,
+  execute,
+  resetClaudeCliCapabilitiesCacheForTests,
+} from "@paperclipai/adapter-claude-local/server";
 
 async function writeFailingClaudeCommand(
   commandPath: string,
@@ -112,6 +116,45 @@ console.log(JSON.stringify({ type: "result", session_id: "33333333-3333-4333-833
   await fs.chmod(commandPath, 0o755);
 }
 
+async function writeHelpWithEffortClaudeCommand(commandPath: string): Promise<void> {
+  const script = `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+const argv = process.argv.slice(2);
+if (argv.includes("--help")) {
+  const helpCountPath = process.env.PAPERCLIP_TEST_HELP_COUNT_PATH;
+  if (helpCountPath) {
+    const current = fs.existsSync(helpCountPath) ? Number(fs.readFileSync(helpCountPath, "utf8")) || 0 : 0;
+    fs.writeFileSync(helpCountPath, String(current + 1), "utf8");
+  }
+  process.stdout.write("Usage: claude [options]\\n  --print\\n  --effort <level>\\n  --model <id>\\n");
+  process.exit(0);
+}
+const addDirIndex = argv.indexOf("--add-dir");
+const addDir = addDirIndex >= 0 ? argv[addDirIndex + 1] : null;
+const instructionsIndex = argv.indexOf("--append-system-prompt-file");
+const instructionsFilePath = instructionsIndex >= 0 ? argv[instructionsIndex + 1] : null;
+const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
+const payload = {
+  argv,
+  prompt: fs.readFileSync(0, "utf8"),
+  addDir,
+  instructionsFilePath,
+  instructionsContents: instructionsFilePath ? fs.readFileSync(instructionsFilePath, "utf8") : null,
+  skillEntries: addDir ? fs.readdirSync(path.join(addDir, ".claude", "skills")).sort() : [],
+};
+if (capturePath) {
+  fs.writeFileSync(capturePath, JSON.stringify(payload), "utf8");
+}
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: "44444444-4444-4444-8444-444444444444", model: "claude-sonnet" }));
+console.log(JSON.stringify({ type: "assistant", session_id: "44444444-4444-4444-8444-444444444444", message: { content: [{ type: "text", text: "hello" }] } }));
+console.log(JSON.stringify({ type: "result", session_id: "44444444-4444-4444-8444-444444444444", result: "hello", usage: { input_tokens: 1, cache_read_input_tokens: 0, output_tokens: 1 } }));
+`;
+  await fs.writeFile(commandPath, script, "utf8");
+  await fs.chmod(commandPath, 0o755);
+}
+
 type CapturePayload = {
   argv: string[];
   prompt: string;
@@ -127,6 +170,10 @@ type CapturePayload = {
   appendedSystemPromptFilePath?: string | null;
   appendedSystemPromptFileContents?: string | null;
 };
+
+afterEach(() => {
+  resetClaudeCliCapabilitiesCacheForTests();
+});
 
 async function writePoisonedMessageIdClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
@@ -820,6 +867,76 @@ describe("claude execute", () => {
       expect(result.exitCode).toBe(0);
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).not.toContain("--effort");
+    } finally {
+      restore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("passes through --effort and reuses the sandbox capability probe when the installed Claude CLI advertises it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-claude-execute-sandbox-effort-supported-"));
+    const { workspace, commandPath, capturePath, restore } = await setupExecuteEnv(root, {
+      commandWriter: writeHelpWithEffortClaudeCommand,
+    });
+    const helpCountPath = path.join(root, "help-count.txt");
+    const remoteWorkspace = path.join(root, "sandbox-workspace");
+    await fs.mkdir(remoteWorkspace, { recursive: true });
+
+    const baseInput = {
+      agent: {
+        id: "agent-1",
+        companyId: "company-1",
+        name: "Claude Coder",
+        adapterType: "claude_local",
+        adapterConfig: {},
+      },
+      runtime: {
+        sessionId: null,
+        sessionParams: null,
+        sessionDisplayId: null,
+        taskKey: null,
+      },
+      config: {
+        command: commandPath,
+        cwd: workspace,
+        effort: "low",
+        env: {
+          PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+          PAPERCLIP_TEST_HELP_COUNT_PATH: helpCountPath,
+        },
+        promptTemplate: "Keep the requested effort when supported.",
+      },
+      context: {},
+      executionTarget: {
+        kind: "remote" as const,
+        transport: "sandbox" as const,
+        providerKey: "daytona",
+        environmentId: "env-1",
+        leaseId: "lease-1",
+        remoteCwd: remoteWorkspace,
+        timeoutMs: 30_000,
+        runner: createLocalSandboxRunner(),
+      },
+      authToken: "run-jwt-token",
+      onLog: async () => {},
+    };
+
+    try {
+      const first = await execute({
+        runId: "run-sandbox-effort-supported-1",
+        ...baseInput,
+      });
+      const second = await execute({
+        runId: "run-sandbox-effort-supported-2",
+        ...baseInput,
+      });
+
+      expect(first.exitCode).toBe(0);
+      expect(second.exitCode).toBe(0);
+      const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      expect(capture.argv).toContain("--effort");
+      expect(capture.argv).toContain("low");
+      expect(await fs.readFile(helpCountPath, "utf8")).toBe("1");
     } finally {
       restore();
       await fs.rm(root, { recursive: true, force: true });

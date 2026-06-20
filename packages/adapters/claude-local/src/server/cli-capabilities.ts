@@ -2,12 +2,39 @@ import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/executio
 import { runAdapterExecutionTargetProcess } from "@paperclipai/adapter-utils/execution-target";
 import path from "node:path";
 
+const effortFlagSupportCache = new Map<string, Promise<boolean | null>>();
+
 export function claudeCommandLooksLike(command: string, expected = "claude"): boolean {
   const base = path.basename(command).toLowerCase();
   return base === expected || base === `${expected}.cmd` || base === `${expected}.exe`;
 }
 
-export async function claudeCommandSupportsEffortFlag(input: {
+function cacheKeyForTarget(command: string, target: AdapterExecutionTarget | null | undefined): string {
+  if (!target) return `local::${command}`;
+  if (target.kind === "local") {
+    return `local:${target.environmentId ?? ""}:${target.leaseId ?? ""}:${command}`;
+  }
+  if (target.transport === "sandbox") {
+    return [
+      "sandbox",
+      target.providerKey ?? "",
+      target.environmentId ?? "",
+      target.leaseId ?? "",
+      command,
+    ].join(":");
+  }
+  return [
+    "ssh",
+    target.environmentId ?? "",
+    target.leaseId ?? "",
+    target.spec.host,
+    target.spec.port ?? "",
+    target.spec.username ?? "",
+    command,
+  ].join(":");
+}
+
+async function probeClaudeCommandSupportsEffortFlag(input: {
   runId: string;
   command: string;
   target: AdapterExecutionTarget | null | undefined;
@@ -16,8 +43,6 @@ export async function claudeCommandSupportsEffortFlag(input: {
   timeoutSec: number;
   graceSec: number;
 }): Promise<boolean | null> {
-  if (!claudeCommandLooksLike(input.command, "claude")) return null;
-
   const help = await runAdapterExecutionTargetProcess(
     input.runId,
     input.target,
@@ -37,4 +62,31 @@ export async function claudeCommandSupportsEffortFlag(input: {
   if (output.includes("--effort")) return true;
   if ((help.exitCode ?? 0) === 0) return false;
   return null;
+}
+
+export async function claudeCommandSupportsEffortFlag(input: {
+  runId: string;
+  command: string;
+  target: AdapterExecutionTarget | null | undefined;
+  cwd: string;
+  env: Record<string, string>;
+  timeoutSec: number;
+  graceSec: number;
+}): Promise<boolean | null> {
+  if (!claudeCommandLooksLike(input.command, "claude")) return null;
+
+  const key = cacheKeyForTarget(input.command, input.target);
+  const cached = effortFlagSupportCache.get(key);
+  if (cached) return cached;
+
+  const probe = probeClaudeCommandSupportsEffortFlag(input).catch((error) => {
+    effortFlagSupportCache.delete(key);
+    throw error;
+  });
+  effortFlagSupportCache.set(key, probe);
+  return probe;
+}
+
+export function resetClaudeCliCapabilitiesCacheForTests() {
+  effortFlagSupportCache.clear();
 }
