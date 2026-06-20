@@ -871,7 +871,7 @@ export function secretService(db: Db) {
           type: "environment",
           id: row.id,
           label: row.name,
-          href: "/company/settings/environments",
+          href: "/company/settings/instance/environments",
           status: row.status,
         });
       }

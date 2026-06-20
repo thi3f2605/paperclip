@@ -49,6 +49,7 @@ export interface InstanceExperimentalSettings {
   enableIsolatedWorkspaces: boolean;
   enableStreamlinedLeftNavigation: boolean;
   enableConferenceRoomChat: boolean;
+  enableTaskWatchdogs: boolean;
   enableIssuePlanDecompositions: boolean;
   enableExperimentalFileViewer: boolean;
   enableTaskWatchdogs: boolean;

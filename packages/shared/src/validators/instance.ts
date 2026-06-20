@@ -43,6 +43,7 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableIsolatedWorkspaces: z.boolean().default(false),
   enableStreamlinedLeftNavigation: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
+  enableTaskWatchdogs: z.boolean().default(false),
   enableIssuePlanDecompositions: z.boolean().default(false),
   enableExperimentalFileViewer: z.boolean().default(false),
   enableTaskWatchdogs: z.boolean().default(false),
@@ -59,6 +60,10 @@ export const instanceExperimentalSettingsSchema = z.object({
 
 export const patchInstanceExperimentalSettingsSchema = instanceExperimentalSettingsSchema.partial();
 
+export const patchInstanceSettingsSchema = z.object({
+  defaultEnvironmentId: z.string().uuid().nullable().optional(),
+}).strict();
+
 export const issueGraphLivenessAutoRecoveryRequestSchema = z.object({
   lookbackHours: z
     .number()
@@ -72,6 +77,7 @@ export type InstanceGeneralSettings = z.infer<typeof instanceGeneralSettingsSche
 export type PatchInstanceGeneralSettings = z.infer<typeof patchInstanceGeneralSettingsSchema>;
 export type InstanceExperimentalSettings = z.infer<typeof instanceExperimentalSettingsSchema>;
 export type PatchInstanceExperimentalSettings = z.infer<typeof patchInstanceExperimentalSettingsSchema>;
+export type PatchInstanceSettings = z.infer<typeof patchInstanceSettingsSchema>;
 export type IssueGraphLivenessAutoRecoveryRequest = z.infer<
   typeof issueGraphLivenessAutoRecoveryRequestSchema
 >;

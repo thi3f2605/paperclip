@@ -3,8 +3,10 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
+  get: vi.fn(),
   getGeneral: vi.fn(),
   getExperimental: vi.fn(),
+  update: vi.fn(),
   updateGeneral: vi.fn(),
   updateExperimental: vi.fn(),
   listCompanyIds: vi.fn(),
@@ -48,14 +50,37 @@ describe("instance settings routes", () => {
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     vi.clearAllMocks();
+    mockInstanceSettingsService.get.mockReset();
     mockInstanceSettingsService.getGeneral.mockReset();
     mockInstanceSettingsService.getExperimental.mockReset();
+    mockInstanceSettingsService.update.mockReset();
     mockInstanceSettingsService.updateGeneral.mockReset();
     mockInstanceSettingsService.updateExperimental.mockReset();
     mockInstanceSettingsService.listCompanyIds.mockReset();
     mockHeartbeatService.buildIssueGraphLivenessAutoRecoveryPreview.mockReset();
     mockHeartbeatService.reconcileIssueGraphLiveness.mockReset();
     mockLogActivity.mockReset();
+    mockInstanceSettingsService.get.mockResolvedValue({
+      id: "instance-settings-1",
+      defaultEnvironmentId: null,
+      general: {
+        censorUsernameInLogs: false,
+        keyboardShortcuts: false,
+        feedbackDataSharingPreference: "prompt",
+      },
+      experimental: {
+        enableEnvironments: false,
+        enableIsolatedWorkspaces: false,
+        enableIssuePlanDecompositions: false,
+        enableExperimentalFileViewer: false,
+        enableCloudSync: false,
+        autoRestartDevServerWhenIdle: false,
+        enableIssueGraphLivenessAutoRecovery: true,
+        issueGraphLivenessAutoRecoveryLookbackHours: 24,
+      },
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
     mockInstanceSettingsService.getGeneral.mockResolvedValue({
       censorUsernameInLogs: false,
       keyboardShortcuts: false,
@@ -71,6 +96,27 @@ describe("instance settings routes", () => {
       autoRestartDevServerWhenIdle: false,
       enableIssueGraphLivenessAutoRecovery: true,
       issueGraphLivenessAutoRecoveryLookbackHours: 24,
+    });
+    mockInstanceSettingsService.update.mockResolvedValue({
+      id: "instance-settings-1",
+      defaultEnvironmentId: "env-1",
+      general: {
+        censorUsernameInLogs: false,
+        keyboardShortcuts: false,
+        feedbackDataSharingPreference: "prompt",
+      },
+      experimental: {
+        enableEnvironments: true,
+        enableIsolatedWorkspaces: true,
+        enableIssuePlanDecompositions: true,
+        enableExperimentalFileViewer: true,
+        enableCloudSync: true,
+        autoRestartDevServerWhenIdle: false,
+        enableIssueGraphLivenessAutoRecovery: true,
+        issueGraphLivenessAutoRecoveryLookbackHours: 24,
+      },
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T01:00:00.000Z",
     });
     mockInstanceSettingsService.updateGeneral.mockResolvedValue({
       id: "instance-settings-1",
@@ -150,6 +196,29 @@ describe("instance settings routes", () => {
     });
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
   }, 10_000);
+
+  it("allows local board users to read and update the instance default environment", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "local-board",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+    });
+
+    const getRes = await request(app).get("/api/instance/settings");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.defaultEnvironmentId).toBeNull();
+
+    const patchRes = await request(app)
+      .patch("/api/instance/settings")
+      .send({ defaultEnvironmentId: "11111111-1111-4111-8111-111111111111" });
+
+    expect(patchRes.status).toBe(200);
+    expect(mockInstanceSettingsService.update).toHaveBeenCalledWith({
+      defaultEnvironmentId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(mockLogActivity).toHaveBeenCalledTimes(2);
+  });
 
   it("allows local board users to update guarded dev-server auto-restart", async () => {
     const app = await createApp({
