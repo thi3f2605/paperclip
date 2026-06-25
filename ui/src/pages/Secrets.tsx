@@ -1195,23 +1195,25 @@ export function Secrets() {
                 </SheetDescription>
               </SheetHeader>
               <div className="flex flex-wrap gap-2 px-4 pb-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setRotateOpen(true);
-                    setRotateValue("");
-                    setRotateExternalRef("");
-                    setRotateProviderConfigId(
-                      selectedSecret.providerConfigId ??
-                        getDefaultProviderConfigId(providerConfigs, selectedSecret.provider),
-                    );
-                    setRotateError(null);
-                  }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                  {selectedSecret.managedMode === "external_reference" ? "Update reference" : "Update value"}
-                </Button>
+                {selectedSecret.managedMode !== "dynamic_command" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setRotateOpen(true);
+                      setRotateValue("");
+                      setRotateExternalRef("");
+                      setRotateProviderConfigId(
+                        selectedSecret.providerConfigId ??
+                          getDefaultProviderConfigId(providerConfigs, selectedSecret.provider),
+                      );
+                      setRotateError(null);
+                    }}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                    {selectedSecret.managedMode === "external_reference" ? "Update reference" : "Update value"}
+                  </Button>
+                )}
                 {selectedSecret.status === "active" ? (
                   <Button
                     size="sm"
@@ -1357,10 +1359,19 @@ export function Secrets() {
             <TabsList
               className={cn("w-full grid", dynamicSecretsEnabled ? "grid-cols-3" : "grid-cols-2")}
             >
-              <TabsTrigger value="managed">Managed value</TabsTrigger>
-              <TabsTrigger value="external">External reference</TabsTrigger>
+              <TabsTrigger value="managed" className="truncate">
+                <span className="sm:hidden">Managed</span>
+                <span className="hidden sm:inline">Managed value</span>
+              </TabsTrigger>
+              <TabsTrigger value="external" className="truncate">
+                <span className="sm:hidden">External</span>
+                <span className="hidden sm:inline">External reference</span>
+              </TabsTrigger>
               {dynamicSecretsEnabled ? (
-                <TabsTrigger value="dynamic">Generate at runtime</TabsTrigger>
+                <TabsTrigger value="dynamic" className="truncate">
+                  <span className="sm:hidden">At runtime</span>
+                  <span className="hidden sm:inline">Generate at runtime</span>
+                </TabsTrigger>
               ) : null}
             </TabsList>
           </Tabs>

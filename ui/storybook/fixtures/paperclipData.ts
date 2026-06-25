@@ -1508,6 +1508,32 @@ export const storybookSecrets: CompanySecret[] = [
     createdAt: new Date("2025-12-01T10:00:00.000Z"),
     updatedAt: new Date("2026-03-01T11:30:00.000Z"),
   },
+  {
+    id: "secret-gh-token-dynamic",
+    companyId: "company-storybook",
+    key: "gh_app_token",
+    name: "GH_APP_TOKEN",
+    provider: "host_command",
+    status: "active",
+    managedMode: "dynamic_command",
+    externalRef: null,
+    dynamicCommand: {
+      provider: "host-command",
+      command: "/usr/local/bin/mint-github-token",
+      ttlSeconds: 3600,
+    },
+    providerConfigId: null,
+    providerMetadata: null,
+    latestVersion: 1,
+    description: "GitHub App installation token minted at injection time.",
+    lastResolvedAt: recent(5),
+    lastRotatedAt: null,
+    deletedAt: null,
+    createdByAgentId: null,
+    createdByUserId: "user-board",
+    createdAt: new Date("2026-06-01T10:00:00.000Z"),
+    updatedAt: recent(5),
+  },
 ];
 
 export const storybookSecretBindings: CompanySecretBinding[] = [
