@@ -9,6 +9,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { Navigate, useNavigate, useParams } from "@/lib/router";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { boardChatApi } from "../api/boardChat";
@@ -20,10 +21,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Activity, AlertCircle, History, Loader2, MessageSquarePlus } from "lucide-react";
+import { Activity, AlertCircle, Check, Copy, History, Loader2, MessageSquarePlus } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { AssistantChat } from "../components/AssistantChat";
 import { cn, relativeTime } from "../lib/utils";
+import { copyTextToClipboard } from "../lib/clipboard";
 import { AGENT_ROLE_LABELS, type Agent, type Issue } from "@paperclipai/shared";
 import {
   Sheet,
@@ -88,10 +90,31 @@ function boardChatHistoryAgentLabel(
   return `${agent.name} · ${role}`;
 }
 
+function boardChatConversationRef(issue: Pick<Issue, "id" | "identifier">): string {
+  return issue.identifier || issue.id;
+}
+
+function boardChatUnavailableMessage(reason: string | null | undefined): string {
+  switch (reason) {
+    case "cancelled":
+      return "This Conference Room chat was cancelled and is no longer available.";
+    case "wrong_company":
+      return "This chat does not belong to the selected company.";
+    case "wrong_kind":
+      return "This link points to an issue, but it is not a Conference Room chat.";
+    case "not_found":
+      return "This Conference Room chat could not be found.";
+    default:
+      return "This Conference Room chat is unavailable.";
+  }
+}
+
 export function BoardChat() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { conversationRef } = useParams<{ conversationRef?: string }>();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Conference Room" }]);
@@ -169,9 +192,11 @@ export function BoardChat() {
   );
 
   const [boardIssueId, setBoardIssueId] = useState<string | null>(null);
+  const [localBoardIssue, setLocalBoardIssue] = useState<Issue | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [minting, setMinting] = useState(false);
   const [mintError, setMintError] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   /** Guards the resolve-or-create endpoint against overlapping calls. */
   const mintingRef = useRef(false);
   const [mobileFeedOpen, setMobileFeedOpen] = useState(false);
@@ -226,9 +251,22 @@ export function BoardChat() {
     [issues],
   );
 
+  const { data: directConversation } = useQuery({
+    queryKey: ["board-chat-conversation", selectedCompanyId, conversationRef],
+    queryFn: () => boardChatApi.getConversation(selectedCompanyId!, conversationRef!),
+    enabled: !!selectedCompanyId && !!conversationRef,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const directBoardIssue = directConversation?.issue ?? null;
+
   const activeBoardIssue = useMemo(
-    () => boardChatIssues.find((issue) => issue.id === boardIssueId) ?? null,
-    [boardChatIssues, boardIssueId],
+    () =>
+      boardChatIssues.find((issue) => issue.id === boardIssueId) ??
+      (localBoardIssue?.id === boardIssueId ? localBoardIssue : null) ??
+      (directBoardIssue?.id === boardIssueId ? directBoardIssue : null),
+    [boardChatIssues, boardIssueId, localBoardIssue, directBoardIssue],
   );
 
   const historyQueryKey = useMemo(
@@ -241,8 +279,17 @@ export function BoardChat() {
 
   // Resolve-or-create the backing board_chat issue. The web client can't mint
   // it directly (the create schema strips `originKind`), so the server owns it.
+  const boardChatPath = useCallback(
+    (issue: Pick<Issue, "id" | "identifier">) => {
+      const prefix = selectedCompany?.issuePrefix || issue.identifier?.split("-")[0] || null;
+      const path = `/board-chat/${boardChatConversationRef(issue)}`;
+      return prefix ? `/${prefix}${path}` : path;
+    },
+    [selectedCompany],
+  );
+
   const ensureConversation = useCallback(
-    async (opts?: { newConversation?: boolean }) => {
+    async (opts?: { newConversation?: boolean; replace?: boolean }) => {
       if (!selectedCompanyId || mintingRef.current) return;
       mintingRef.current = true;
       setMinting(true);
@@ -250,9 +297,15 @@ export function BoardChat() {
       try {
         const { issue } = await boardChatApi.resolveConversation(
           selectedCompanyId,
-          opts,
+          opts?.newConversation ? { newConversation: true } : undefined,
         );
         setBoardIssueId(issue.id);
+        setLocalBoardIssue(issue);
+        queryClient.setQueryData(
+          ["board-chat-conversation", selectedCompanyId, boardChatConversationRef(issue)],
+          { issue, unavailableReason: null },
+        );
+        navigate(boardChatPath(issue), { replace: opts?.replace ?? false });
         if (historyQueryKey) {
           await queryClient.invalidateQueries({ queryKey: historyQueryKey });
         }
@@ -267,7 +320,7 @@ export function BoardChat() {
         setMinting(false);
       }
     },
-    [selectedCompanyId, historyQueryKey, queryClient],
+    [selectedCompanyId, historyQueryKey, queryClient, navigate, boardChatPath],
   );
 
   // Reset the active conversation when the company changes; the resolve effect
@@ -276,27 +329,74 @@ export function BoardChat() {
   useEffect(() => {
     if (prevCompanyRef.current !== selectedCompanyId) {
       setBoardIssueId(null);
+      setLocalBoardIssue(null);
       setHistoryOpen(false);
       setMintError(null);
+      setCopiedLink(false);
       prevCompanyRef.current = selectedCompanyId;
     }
   }, [selectedCompanyId]);
 
-  // Once history loads, anchor onto the most-recent open conversation; if the
-  // company has none yet, mint the first one so the room is immediately live.
-  // A conversation the user (or a fresh mint) already selected is respected —
-  // a just-minted id may not be in the history list yet, and re-anchoring here
-  // would snap the room back to the previous conversation.
+  // The default room URL is only an entry point. Once history loads, replace it
+  // with the latest non-cancelled conversation, or mint the first one and
+  // replace to that canonical URL.
   useEffect(() => {
-    if (!selectedCompanyId || !issues) return;
-    if (boardIssueId) return;
-    if (boardChatIssues.length > 0) {
-      const open = boardChatIssues.find((i) => i.status !== "done");
-      setBoardIssueId(open?.id ?? boardChatIssues[0]?.id ?? null);
+    if (!selectedCompanyId || conversationRef || !issues) return;
+    if (localBoardIssue && localBoardIssue.id === boardIssueId) {
+      navigate(boardChatPath(localBoardIssue), { replace: true });
       return;
     }
-    void ensureConversation();
-  }, [selectedCompanyId, issues, boardIssueId, boardChatIssues, ensureConversation]);
+    if (boardChatIssues.length > 0) {
+      const latest = boardChatIssues[0] ?? null;
+      if (!latest) return;
+      setBoardIssueId(latest.id);
+      setLocalBoardIssue(null);
+      navigate(boardChatPath(latest), { replace: true });
+      return;
+    }
+    void ensureConversation({ replace: true });
+  }, [
+    selectedCompanyId,
+    conversationRef,
+    issues,
+    boardChatIssues,
+    localBoardIssue,
+    boardIssueId,
+    ensureConversation,
+    navigate,
+    boardChatPath,
+  ]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || conversationRef || !localBoardIssue) return;
+    if (localBoardIssue.id !== boardIssueId) return;
+    navigate(boardChatPath(localBoardIssue), { replace: true });
+  }, [
+    selectedCompanyId,
+    conversationRef,
+    localBoardIssue,
+    boardIssueId,
+    navigate,
+    boardChatPath,
+  ]);
+
+  useEffect(() => {
+    if (!conversationRef || !directConversation) return;
+    if (directConversation.issue) {
+      const issue = directConversation.issue;
+      setMintError(null);
+      setBoardIssueId(issue.id);
+      setLocalBoardIssue(issue);
+      const canonicalRef = boardChatConversationRef(issue);
+      if (conversationRef !== canonicalRef) {
+        navigate(boardChatPath(issue), { replace: true });
+      }
+      return;
+    }
+    setBoardIssueId(null);
+    setLocalBoardIssue(null);
+    setMintError(null);
+  }, [conversationRef, directConversation, navigate, boardChatPath]);
 
   const handleNewChat = useCallback(() => {
     if (minting) return;
@@ -304,11 +404,32 @@ export function BoardChat() {
     void ensureConversation({ newConversation: true });
   }, [minting, ensureConversation]);
 
-  const handleSelectConversation = useCallback((issueId: string) => {
-    setBoardIssueId(issueId);
+  const handleSelectConversation = useCallback((issue: Issue) => {
+    setBoardIssueId(issue.id);
+    setLocalBoardIssue(issue);
     setHistoryOpen(false);
     setMintError(null);
-  }, []);
+    if (selectedCompanyId) {
+      queryClient.setQueryData(
+        ["board-chat-conversation", selectedCompanyId, boardChatConversationRef(issue)],
+        { issue, unavailableReason: null },
+      );
+    }
+    navigate(boardChatPath(issue));
+  }, [selectedCompanyId, queryClient, navigate, boardChatPath]);
+
+  const currentChatUrl = useMemo(() => {
+    if (!activeBoardIssue || typeof window === "undefined") return null;
+    return new URL(boardChatPath(activeBoardIssue), window.location.origin).toString();
+  }, [activeBoardIssue, boardChatPath]);
+
+  const handleCopyLink = useCallback(() => {
+    if (!currentChatUrl) return;
+    void copyTextToClipboard(currentChatUrl).then(() => {
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 1500);
+    });
+  }, [currentChatUrl]);
 
   const refreshBoardChatHistory = useCallback(async () => {
     if (!historyQueryKey) return;
@@ -328,136 +449,188 @@ export function BoardChat() {
     );
   }
 
+  const defaultRouteRedirect =
+    !conversationRef && activeBoardIssue ? (
+      <Navigate to={boardChatPath(activeBoardIssue)} replace />
+    ) : null;
+
   return (
-    <div
-      data-testid="board-chat-shell"
-      className="flex h-[calc(100dvh_-_3rem_-_4rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] flex-col -m-4 md:h-[calc(100%_+_3rem)] md:-m-6"
-    >
+    <>
+      {defaultRouteRedirect}
       <div
-        ref={splitContainerRef}
-        className="flex min-h-0 min-w-0 flex-1 flex-row"
+        data-testid="board-chat-shell"
+        className="flex h-[calc(100dvh_-_3rem_-_4rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] flex-col -m-4 md:h-[calc(100%_+_3rem)] md:-m-6"
       >
-        {/* Left: chat (self-contained pane) — full width on mobile, 2/3 default on desktop */}
         <div
-          className={cn(
-            "relative flex min-h-0 min-w-0 shrink-0 flex-col bg-background",
-            "w-full md:w-auto",
-            innerWidth <= 0 && "md:w-2/3",
-          )}
-          style={innerWidth > 0 && containerWidth >= 2 * SPLIT_MIN_PANE_PX + SPLIT_DIVIDER_PX ? { width: leftPaneWidth } : undefined}
+          ref={splitContainerRef}
+          className="flex min-h-0 min-w-0 flex-1 flex-row"
         >
-          {/* Room toolbar — history + new-chat controls. The agent identity
+          {/* Left: chat (self-contained pane) — full width on mobile, 2/3 default on desktop */}
+          <div
+            className={cn(
+              "relative flex min-h-0 min-w-0 shrink-0 flex-col bg-background",
+              "w-full md:w-auto",
+              innerWidth <= 0 && "md:w-2/3",
+            )}
+            style={
+              innerWidth > 0 && containerWidth >= 2 * SPLIT_MIN_PANE_PX + SPLIT_DIVIDER_PX
+                ? { width: leftPaneWidth }
+                : undefined
+            }
+          >
+            {/* Room toolbar — history + new-chat controls. The agent identity
                (real CEO, no concierge persona) is rendered by AssistantChat
                just below. */}
-          <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-            <p className="min-w-0 truncate text-xs text-muted-foreground">
-              {activeBoardIssue
-                ? `${selectedCompany?.name ?? "Your company"} · updated ${relativeTime(activeBoardIssue.updatedAt)}`
-                : selectedCompany?.name ?? "Your company"}
-            </p>
-            <div className="flex shrink-0 items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="chat history"
-                    onClick={() => setHistoryOpen(true)}
-                  >
-                    <History className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">chat history</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="new chat"
-                    onClick={handleNewChat}
-                    disabled={minting}
-                  >
-                    <MessageSquarePlus className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">new chat</TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-            <SheetContent side="right" className="w-[min(24rem,100vw)] p-0 sm:max-w-md">
-              <SheetHeader className="border-b px-4 py-3">
-                <SheetTitle className="text-sm">Chat history</SheetTitle>
-                <SheetDescription>
-                  Pick up a previous CEO conversation.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 overflow-y-auto py-2">
-                <div className="px-3 pb-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={handleNewChat}
-                    disabled={minting}
-                  >
-                    <MessageSquarePlus className="h-4 w-4" />
-                    New chat
-                  </Button>
-                </div>
-                {boardChatIssues.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No previous chats yet.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-border">
-                    {boardChatIssues.map((issue) => {
-                      const active = issue.id === boardIssueId;
-                      const label = boardChatHistoryLabel(issue);
-                      const agentLabel = boardChatHistoryAgentLabel(
-                        issue,
-                        agentsById,
-                        ceoAgent ?? null,
-                      );
-                      return (
-                        <button
-                          key={issue.id}
-                          type="button"
-                          className={cn(
-                            "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
-                            active && "bg-accent/70",
-                          )}
-                          onClick={() => handleSelectConversation(issue.id)}
-                          disabled={active}
-                        >
-                          <History className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-foreground">
-                              {label}
-                            </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {agentLabel ? `${agentLabel} · ` : ""}updated {relativeTime(issue.updatedAt)}
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+            <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 py-2">
+              <p className="min-w-0 truncate text-xs text-muted-foreground">
+                {activeBoardIssue
+                  ? `${selectedCompany?.name ?? "Your company"} · updated ${relativeTime(activeBoardIssue.updatedAt)}`
+                  : selectedCompany?.name ?? "Your company"}
+              </p>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground"
+                      aria-label="chat history"
+                      onClick={() => setHistoryOpen(true)}
+                    >
+                      <History className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">chat history</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground"
+                      aria-label="copy chat link"
+                      onClick={handleCopyLink}
+                      disabled={!currentChatUrl}
+                    >
+                      {copiedLink ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">copy chat link</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground"
+                      aria-label="new chat"
+                      onClick={handleNewChat}
+                      disabled={minting}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">new chat</TooltipContent>
+                </Tooltip>
               </div>
-            </SheetContent>
-          </Sheet>
+            </div>
+            <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+              <SheetContent side="right" className="w-[min(24rem,100vw)] p-0 sm:max-w-md">
+                <SheetHeader className="border-b px-4 py-3">
+                  <SheetTitle className="text-sm">Chat history</SheetTitle>
+                  <SheetDescription>
+                    Pick up a previous CEO conversation.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 overflow-y-auto py-2">
+                  <div className="px-3 pb-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={handleNewChat}
+                      disabled={minting}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                      New chat
+                    </Button>
+                  </div>
+                  {boardChatIssues.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      No previous chats yet.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {boardChatIssues.map((issue) => {
+                        const active = issue.id === boardIssueId;
+                        const label = boardChatHistoryLabel(issue);
+                        const agentLabel = boardChatHistoryAgentLabel(
+                          issue,
+                          agentsById,
+                          ceoAgent ?? null,
+                        );
+                        return (
+                          <button
+                            key={issue.id}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
+                              active && "bg-accent/70",
+                            )}
+                            onClick={() => handleSelectConversation(issue)}
+                            disabled={active}
+                          >
+                            <History className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-foreground">
+                                {label}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {agentLabel ? `${agentLabel} · ` : ""}updated{" "}
+                                {relativeTime(issue.updatedAt)}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
 
           {/* Center column — the real-agent conversation. AssistantChat
                owns the identity header, message stream, interaction cards,
                live/active-run row, and composer. */}
-          {boardIssueId ? (
+          {directConversation && !directConversation.issue ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <div
+                role="alert"
+                className="flex max-w-md items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="break-words">
+                  {boardChatUnavailableMessage(directConversation.unavailableReason)}
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/board-chat", { replace: true })}
+              >
+                Open latest chat
+              </Button>
+            </div>
+          ) : boardIssueId ? (
             <AssistantChat
               key={boardIssueId}
               issueId={boardIssueId}
@@ -491,7 +664,10 @@ export function BoardChat() {
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-center text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" aria-label="Opening the Conference Room" />
+              <Loader2
+                className="h-5 w-5 animate-spin"
+                aria-label="Opening the Conference Room"
+              />
             </div>
           )}
         </div>
@@ -535,6 +711,7 @@ export function BoardChat() {
           </SheetContent>
         </Sheet>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
