@@ -43,11 +43,11 @@ interface TerminalWsServer {
 
 interface SetupSessionSnapshot {
   id: string;
-  companyId: string;
   environmentId: string;
   provider: string;
   status: string;
   expiresAt: Date | string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface CustomImageTerminalService {
@@ -162,6 +162,15 @@ function requireFutureSetupExpiry(session: { expiresAt: Date | string | null }, 
   return expiresAt;
 }
 
+function readSetupSessionCompanyId(session: {
+  metadata?: Record<string, unknown> | null;
+}): string | null {
+  const value = session.metadata?.setupRpcCompanyId;
+  if (typeof value !== "string") return null;
+  const companyId = value.trim();
+  return companyId && companyId !== "instance" ? companyId : null;
+}
+
 function statusLineForError(err: unknown) {
   const status = typeof err === "object" && err !== null && "status" in err
     ? Number((err as { status?: unknown }).status)
@@ -274,8 +283,9 @@ async function validateTerminalUpgrade(input: {
     input.sessionStore.delete(terminalSession.id);
     throw unprocessable("Invalid terminal setup session.");
   }
+  const storedSetupCompanyId = readSetupSessionCompanyId(storedSetupSession);
   if (
-    storedSetupSession.companyId !== terminalSession.companyId
+    storedSetupCompanyId !== terminalSession.companyId
     || storedSetupSession.environmentId !== terminalSession.environmentId
     || storedSetupSession.provider !== terminalSession.provider
   ) {
@@ -289,7 +299,7 @@ async function validateTerminalUpgrade(input: {
   });
   if (
     refreshed.session.id !== terminalSession.setupSessionId
-    || refreshed.session.companyId !== terminalSession.companyId
+    || readSetupSessionCompanyId(refreshed.session) !== terminalSession.companyId
     || refreshed.session.environmentId !== terminalSession.environmentId
     || refreshed.session.provider !== terminalSession.provider
   ) {
@@ -564,6 +574,10 @@ export function setupEnvironmentCustomImageTerminalWebSocketServer(
   wss.on("close", () => {
     connectionRegistry.closeAll("server_shutdown");
   });
+
+  if (typeof server.on !== "function") {
+    return wss;
+  }
 
   server.on("close", () => {
     connectionRegistry.closeAll("server_shutdown");

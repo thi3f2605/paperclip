@@ -86,6 +86,7 @@ function createSession(overrides: Record<string, unknown> = {}) {
     provider: "daytona",
     status: "waiting_for_user",
     expiresAt: futureDate(),
+    metadata: { setupRpcCompanyId: "company-1" },
     ...overrides,
   };
 }

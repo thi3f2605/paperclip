@@ -170,6 +170,7 @@ function createSession(overrides: Record<string, unknown> = {}) {
     },
     connectionSecretRef: null,
     metadata: {
+      setupRpcCompanyId: "company-1",
       safeLabel: "setup",
       connectUrl: "https://203.0.113.10/setup",
     },
@@ -298,7 +299,6 @@ describe("environment customImage setup routes", () => {
     expect(res.status).toBe(201);
     expect(res.body.connectionPayload.command).toContain("203.0.113.10");
     expect(mockEnvironmentCustomImageService.startSetupSession).toHaveBeenCalledWith({
-      companyId: "company-1",
       environmentId: "env-1",
       templateId: null,
       ttlSeconds: 3600,
@@ -306,6 +306,7 @@ describe("environment customImage setup routes", () => {
         userId: "user-1",
         agentId: null,
       },
+      secretContextCompanyId: "company-1",
     });
     const activity = loggedActivityJson();
     expect(activity).not.toContain("203.0.113.10");
@@ -624,11 +625,9 @@ describe("environment customImage setup routes", () => {
     expect(rollback.status).toBe(200);
     expect(disable.status).toBe(200);
     expect(mockEnvironmentCustomImageService.rollbackTemplate).toHaveBeenCalledWith({
-      companyId: "company-1",
       environmentId: "env-1",
     });
     expect(mockEnvironmentCustomImageService.disableTemplate).toHaveBeenCalledWith({
-      companyId: "company-1",
       environmentId: "env-1",
       deleteProviderTemplate: true,
     });
