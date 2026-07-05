@@ -298,7 +298,7 @@ function Variant02Borderless() {
                       key={option.id}
                       type="button"
                       onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                      className="flex w-full items-center gap-2 text-left text-sm"
+                      className="flex min-h-8 w-full items-center gap-2 text-left text-sm"
                     >
                       <span
                         className={cn(
@@ -332,7 +332,7 @@ function Variant02Borderless() {
         <div className="mt-1 text-sm font-medium text-foreground">{cbPayload.prompt}</div>
         <div className="mt-2 space-y-1">
           {cbOptions.map((option) => (
-            <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
               <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
               {option.label}
             </label>
@@ -437,7 +437,7 @@ function Variant03Collapsed({ expandFirst }: { expandFirst?: boolean }) {
                       key={option.id}
                       type="button"
                       onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                      className="flex w-full items-center gap-2 text-left text-sm"
+                      className="flex min-h-8 w-full items-center gap-2 text-left text-sm"
                     >
                       <span
                         className={cn(
@@ -472,7 +472,7 @@ function Variant03Collapsed({ expandFirst }: { expandFirst?: boolean }) {
       >
         <div className="space-y-1">
           {cbOptions.map((option) => (
-            <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
               <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
               {option.label}
             </label>
@@ -563,7 +563,7 @@ function Variant04ChatNative() {
         <p className="text-sm text-foreground">{cbPayload.prompt}</p>
         <div className="mt-2 space-y-1">
           {cbOptions.map((option) => (
-            <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
               <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
               {option.label}
             </label>
@@ -642,7 +642,7 @@ function Variant05TrimmedFooter() {
                         key={option.id}
                         type="button"
                         onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                        className="flex w-full items-center gap-2 text-left text-sm"
+                        className="flex min-h-8 w-full items-center gap-2 text-left text-sm"
                       >
                         <span
                           className={cn(
@@ -681,7 +681,7 @@ function Variant05TrimmedFooter() {
           <div className="text-sm font-semibold text-foreground">{cbPayload.prompt}</div>
           <div className="mt-2 space-y-1">
             {cbOptions.map((option) => (
-              <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
                 <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
                 {option.label}
               </label>
@@ -751,7 +751,7 @@ function Variant06DenseTwoColumn() {
                       key={option.id}
                       type="button"
                       onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                      className="flex items-center gap-2 text-left text-sm"
+                      className="flex min-h-8 items-center gap-2 text-left text-sm"
                     >
                       <span
                         className={cn(
@@ -789,7 +789,7 @@ function Variant06DenseTwoColumn() {
           <TwoColRow label={cbPayload.prompt}>
             <div className="grid gap-1 sm:grid-cols-2">
               {cbOptions.map((option) => (
-                <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
                   <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
                   {option.label}
                 </label>
@@ -950,7 +950,7 @@ function Variant08Banner() {
                           key={option.id}
                           type="button"
                           onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                          className="flex w-full items-center gap-2 text-left text-sm"
+                          className="flex min-h-8 w-full items-center gap-2 text-left text-sm"
                         >
                           <span
                             className={cn(
@@ -991,7 +991,7 @@ function Variant08Banner() {
             <div className="text-sm text-foreground">{cbPayload.prompt}</div>
             <div className="mt-2 space-y-1">
               {cbOptions.map((option) => (
-                <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
                   <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
                   {option.label}
                 </label>
@@ -1110,7 +1110,7 @@ function Variant09Split({ dialogOpen }: { dialogOpen?: boolean }) {
             </DialogHeader>
             <div className="space-y-1.5">
               {cbOptions.map((option) => (
-                <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <label key={option.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-foreground">
                   <Checkbox checked={checked.has(option.id)} onCheckedChange={() => toggleChecked(option.id)} />
                   {option.label}
                 </label>
@@ -1165,7 +1165,7 @@ function Variant10Monochrome() {
                       key={option.id}
                       type="button"
                       onClick={() => toggle(question.id, option.id, question.selectionMode)}
-                      className="flex w-full items-baseline gap-2 text-left text-sm"
+                      className="flex min-h-8 w-full items-baseline gap-2 text-left text-sm"
                     >
                       <span className="w-4 shrink-0 font-mono text-xs text-muted-foreground">
                         {selected ? "[x]" : "[ ]"}
@@ -1207,7 +1207,7 @@ function Variant10Monochrome() {
                 key={option.id}
                 type="button"
                 onClick={() => toggleChecked(option.id)}
-                className="flex w-full items-baseline gap-2 text-left text-sm"
+                className="flex min-h-8 w-full items-baseline gap-2 text-left text-sm"
               >
                 <span className="w-4 shrink-0 font-mono text-xs text-muted-foreground">
                   {selected ? "[x]" : "[ ]"}
