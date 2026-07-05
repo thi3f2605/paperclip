@@ -593,6 +593,67 @@ describeEmbeddedPostgres("low-trust red-team HTTP route regression suite", () =>
     });
   });
 
+  it("denies task-bridge checkout when a secondary issue project is outside the key scope", async () => {
+    const fixture = await seedLowTrustFixture(db);
+    const [targetIssue] = await db.insert(issues).values({
+      companyId: fixture.company.id,
+      projectId: fixture.projects.allowed.id,
+      title: "Multi-project bridge checkout target",
+      status: "todo",
+      priority: "medium",
+      assigneeAgentId: fixture.agents.standard.id,
+    }).returning();
+    await db.insert(issueProjects).values([
+      {
+        companyId: fixture.company.id,
+        issueId: targetIssue!.id,
+        projectId: fixture.projects.allowed.id,
+        isPrimary: true,
+      },
+      {
+        companyId: fixture.company.id,
+        issueId: targetIssue!.id,
+        projectId: fixture.projects.outOfScope.id,
+        isPrimary: false,
+      },
+    ]);
+
+    const taskBridgeActor: Express.Request["actor"] = {
+      type: "agent",
+      agentId: fixture.agents.lowTrust.id,
+      companyId: fixture.company.id,
+      runId: fixture.runs.lowTrust.id,
+      source: "agent_key",
+      keyId: "task-bridge-key",
+      keyScope: { kind: "task_bridge", projectIds: [fixture.projects.allowed.id] },
+    };
+
+    const checkout = await request(createApp(db, taskBridgeActor))
+      .post(`/api/issues/${targetIssue!.id}/checkout`)
+      .send({
+        agentId: fixture.agents.lowTrust.id,
+        expectedStatuses: ["todo", "backlog", "blocked", "in_review"],
+      });
+
+    expect(checkout.status, JSON.stringify(checkout.body)).toBe(403);
+    expect(checkout.body.error).toBe("Task bridge key is outside its approved parent or project boundary.");
+
+    const row = await db
+      .select({
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+        checkoutRunId: issues.checkoutRunId,
+      })
+      .from(issues)
+      .where(eq(issues.id, targetIssue!.id))
+      .then((rows) => rows[0]);
+    expect(row).toEqual({
+      status: "todo",
+      assigneeAgentId: fixture.agents.standard.id,
+      checkoutRunId: null,
+    });
+  });
+
   it("allows mentioned low-trust agents to comment on out-of-bound assigned issues", async () => {
     const fixture = await seedLowTrustFixture(db);
     const [targetIssue] = await db.insert(issues).values({

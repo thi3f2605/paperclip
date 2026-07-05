@@ -7204,6 +7204,7 @@ export function issueRoutes(
       await assertCanAssignTasks(req, issue.companyId, {
         issueId: issue.id,
         projectId: issue.projectId ?? null,
+        projectIds: issueProjectIdsForAuthorization(issue),
         parentIssueId: issue.parentId ?? null,
         assigneeAgentId: req.body.agentId,
         assigneeUserId: null,
