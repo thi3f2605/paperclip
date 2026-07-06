@@ -171,13 +171,13 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   );
 
   it(
-    "replays migration 0128 safely and keeps issue project backfill idempotent",
+    "replays issue project migration safely and keeps issue project backfill idempotent",
     async () => {
       const connectionString = await createTempDatabase();
 
       await applyPendingMigrations(connectionString);
 
-      const issueProjectsHash = await migrationHash("0128_issue_projects.sql");
+      const issueProjectsHash = await migrationHash("0131_issue_projects.sql");
       const companyId = "10000000-0000-4000-8000-000000000001";
       const projectId = "20000000-0000-4000-8000-000000000001";
       const issueId = "30000000-0000-4000-8000-000000000001";
