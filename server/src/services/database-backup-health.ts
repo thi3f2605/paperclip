@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 export type DatabaseBackupHealthWarningCode =
   | "database_backup_check_failed"
+  | "database_backup_clock_skew"
   | "database_backup_last_failure"
   | "database_backup_missing"
   | "database_backup_stale";
@@ -44,45 +45,73 @@ function roundHours(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function readLastFailure(alertFile: string | undefined) {
-  if (!alertFile || !existsSync(alertFile)) return null;
-
-  const stat = statSync(alertFile);
-  const message = readFileSync(alertFile, "utf8").trim().split(/\r?\n/)[0] || "Database backup failure marker is present.";
-  return {
-    path: alertFile,
-    mtime: new Date(stat.mtimeMs).toISOString(),
-    message,
-  };
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
-function findLatestBackup(backupDir: string, nowMs: number) {
-  if (!existsSync(backupDir)) return null;
+async function readLastFailure(alertFile: string | undefined) {
+  if (!alertFile) return null;
 
-  const candidates = readdirSync(backupDir)
-    .filter((name) => name.endsWith(".sql.gz"))
-    .map((name) => {
-      const fullPath = join(backupDir, name);
-      const stat = statSync(fullPath);
-      return { fullPath, name, stat };
-    })
-    .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+  try {
+    const [alertStat, contents] = await Promise.all([
+      stat(alertFile),
+      readFile(alertFile, "utf8"),
+    ]);
+    const message = contents.trim().split(/\r?\n/)[0] || "Database backup failure marker is present.";
+    return {
+      path: alertFile,
+      mtime: new Date(alertStat.mtimeMs).toISOString(),
+      message,
+    };
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
+  }
+}
 
-  const latest = candidates[0];
+async function findLatestBackup(backupDir: string, nowMs: number) {
+  let names: string[];
+  try {
+    names = await readdir(backupDir);
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
+  }
+
+  let latest: { fullPath: string; mtimeMs: number; size: number } | null = null;
+  for (const name of names) {
+    if (!name.endsWith(".sql.gz")) continue;
+    const fullPath = join(backupDir, name);
+    let fileStat;
+    try {
+      fileStat = await stat(fullPath);
+    } catch (error) {
+      if (isMissingFileError(error)) continue;
+      throw error;
+    }
+    if (!latest || fileStat.mtimeMs > latest.mtimeMs) {
+      latest = { fullPath, mtimeMs: fileStat.mtimeMs, size: fileStat.size };
+    }
+  }
+
   if (!latest) return null;
 
   return {
     name: basename(latest.fullPath),
     path: latest.fullPath,
-    mtime: new Date(latest.stat.mtimeMs).toISOString(),
-    ageHours: roundHours((nowMs - latest.stat.mtimeMs) / 3_600_000),
-    sizeBytes: latest.stat.size,
+    mtime: new Date(latest.mtimeMs).toISOString(),
+    ageHours: roundHours((nowMs - latest.mtimeMs) / 3_600_000),
+    sizeBytes: latest.size,
   };
 }
 
-export function inspectDatabaseBackupHealth(
+export async function inspectDatabaseBackupHealth(
   opts: InspectDatabaseBackupHealthOptions,
-): DatabaseBackupHealthStatus {
+): Promise<DatabaseBackupHealthStatus> {
   const warnings: DatabaseBackupHealthWarning[] = [];
   const now = opts.now ?? new Date();
   const maxAgeHours = Math.max(1, opts.maxAgeHours);
@@ -91,13 +120,20 @@ export function inspectDatabaseBackupHealth(
   let lastFailure: DatabaseBackupHealthStatus["lastFailure"] = null;
 
   try {
-    latestBackup = findLatestBackup(opts.backupDir, now.getTime());
-    lastFailure = readLastFailure(opts.alertFile);
+    [latestBackup, lastFailure] = await Promise.all([
+      findLatestBackup(opts.backupDir, now.getTime()),
+      readLastFailure(opts.alertFile),
+    ]);
 
     if (!latestBackup) {
       warnings.push({
         code: "database_backup_missing",
         message: `No .sql.gz database backups found in ${opts.backupDir}.`,
+      });
+    } else if (latestBackup.ageHours < 0) {
+      warnings.push({
+        code: "database_backup_clock_skew",
+        message: `Latest database backup timestamp ${latestBackup.mtime} is in the future; backup freshness cannot be verified (check system clock).`,
       });
     } else if (latestBackup.ageHours > maxAgeHours) {
       warnings.push({

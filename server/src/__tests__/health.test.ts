@@ -166,11 +166,49 @@ describe("GET /health", () => {
     expect(res.body.warnings).toEqual(res.body.databaseBackup.warnings);
   });
 
+  it("warns instead of reporting fresh when the latest backup mtime is in the future", async () => {
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
+    const backupFile = path.join(backupDir, "paperclip-20260707-120000.sql.gz");
+    fs.writeFileSync(backupFile, "backup");
+    fs.utimesSync(
+      backupFile,
+      new Date("2026-07-07T12:00:00.000Z"),
+      new Date("2026-07-07T12:00:00.000Z"),
+    );
+    const app = createApp(createHealthyDb(), testServerInfo, {
+      enabled: true,
+      backupDir,
+      maxAgeHours: 26,
+      now: new Date("2026-07-06T12:00:00.000Z"),
+    });
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.databaseBackup).toMatchObject({
+      status: "warning",
+      latestBackup: {
+        name: "paperclip-20260707-120000.sql.gz",
+        ageHours: -24,
+      },
+      warnings: [
+        {
+          code: "database_backup_clock_skew",
+        },
+      ],
+    });
+  });
+
   it("surfaces database backup failure markers in full health details", async () => {
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
     const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
     const alertFile = path.join(backupDir, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
+    fs.utimesSync(
+      backupFile,
+      new Date("2026-07-06T03:17:02.000Z"),
+      new Date("2026-07-06T03:17:02.000Z"),
+    );
     fs.writeFileSync(alertFile, "db-backup-to-s3 failed at 2026-07-06T03:17:00.000Z exit=1\n");
     const app = createApp(createHealthyDb(), testServerInfo, {
       enabled: true,

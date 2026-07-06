@@ -168,7 +168,7 @@ export function healthRoutes(
     }
 
     const databaseBackup = exposeFullDetails && opts.databaseBackupHealth
-      ? inspectDatabaseBackupHealth(opts.databaseBackupHealth)
+      ? await inspectDatabaseBackupHealth(opts.databaseBackupHealth)
       : undefined;
     const warnings = databaseBackup?.warnings.length ? databaseBackup.warnings : undefined;
 

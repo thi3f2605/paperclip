@@ -900,6 +900,7 @@ registry.registerPath({
         warnings: z.array(z.object({
           code: z.enum([
             "database_backup_check_failed",
+            "database_backup_clock_skew",
             "database_backup_last_failure",
             "database_backup_missing",
             "database_backup_stale",
