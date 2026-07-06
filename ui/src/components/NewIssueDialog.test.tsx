@@ -76,6 +76,7 @@ const mockAssetsApi = vi.hoisted(() => ({
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
 }));
+const mockMissingUserSecretsBannerRender = vi.hoisted(() => vi.fn());
 
 vi.mock("../context/DialogContext", () => ({
   useDialog: () => dialogState,
@@ -116,6 +117,20 @@ vi.mock("../api/assets", () => ({
 vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
+
+vi.mock("../pages/secrets/MissingUserSecretsBanner", async () => {
+  const React = await import("react");
+  return {
+    MissingUserSecretsBanner: (props: { definitionKeys?: string[] }) => {
+      mockMissingUserSecretsBannerRender(props);
+      return React.createElement(
+        "div",
+        { "data-testid": "missing-user-secrets-banner" },
+        props.definitionKeys?.join(",") ?? "",
+      );
+    },
+  };
+});
 
 vi.mock("../hooks/useProjectOrder", () => ({
   useProjectOrder: ({ projects }: { projects: unknown[] }) => ({
@@ -340,6 +355,7 @@ describe("NewIssueDialog", () => {
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
     mockAssetsApi.uploadImage.mockResolvedValue({ contentPath: "/uploads/asset.png" });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    mockMissingUserSecretsBannerRender.mockReset();
     localStorage.clear();
     mockIssuesApi.create.mockResolvedValue({
       id: "issue-2",
@@ -456,6 +472,64 @@ describe("NewIssueDialog", () => {
         workMode: "standard",
       }),
     );
+
+    act(() => root.unmount());
+  });
+
+  it("does not show user-secret warnings when the draft will not run an env binding that needs them", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    expect(mockMissingUserSecretsBannerRender).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+  });
+
+  it("scopes user-secret warnings to selected runnable agent and project env bindings", async () => {
+    dialogState.newIssueDefaults = {
+      title: "Run with scoped secrets",
+      assigneeAgentId: "agent-1",
+      projectId: "project-1",
+    };
+    mockAgentsApi.list.mockResolvedValue([
+      {
+        id: "agent-1",
+        name: "CodexCoder",
+        status: "active",
+        adapterType: "codex_local",
+        adapterConfig: {
+          env: {
+            AGENT_TOKEN: { type: "user_secret_ref", key: "agent_token", required: true },
+            OPTIONAL_TOKEN: { type: "user_secret_ref", key: "optional_token", required: false },
+          },
+        },
+        runtimeConfig: {},
+        permissions: {},
+      },
+    ]);
+    mockProjectsApi.list.mockResolvedValue([
+      {
+        id: "project-1",
+        name: "Alpha",
+        description: null,
+        archivedAt: null,
+        color: "#445566",
+        env: {
+          PROJECT_TOKEN: { type: "user_secret_ref", key: "project_token", required: true },
+        },
+      },
+    ]);
+
+    const { root } = renderDialog(container);
+    await waitForAssertion(() => {
+      expect(mockMissingUserSecretsBannerRender).toHaveBeenCalledWith(
+        expect.objectContaining({
+          definitionKeys: ["agent_token", "project_token"],
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("agent_token,project_token");
 
     act(() => root.unmount());
   });
@@ -1221,7 +1295,7 @@ describe("NewIssueDialog", () => {
       expect(workModeOption("ask")?.textContent).toContain("Ask mode");
       expect(workModeOption("planning")?.textContent).toContain("Plan mode");
 
-      expect(statusOptionIconClass("Todo", "Executable — assignee will be woken")).toContain("text-amber-600");
+      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-amber-600");
       expect(statusOptionIconClass("In Progress")).toContain("text-blue-600");
 
       act(() => root.unmount());
