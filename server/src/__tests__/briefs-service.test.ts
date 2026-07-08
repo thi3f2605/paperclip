@@ -50,6 +50,38 @@ describe("briefs service", () => {
     });
   });
 
+  it("marks non-invokable built-in agents as unavailable", async () => {
+    requireBuiltInAgentMock.mockResolvedValue({
+      definition: {
+        key: "briefs",
+        displayName: "Briefs Agent",
+        featureKeys: ["briefs"],
+      },
+      agent: {
+        id: "agent-1",
+        name: "Briefs Agent",
+        status: "pending_approval",
+        adapterType: "codex_local",
+      },
+      warning: {
+        code: "built_in_agent_unavailable",
+        key: "briefs",
+        agentId: "agent-1",
+        message: "Briefs Agent is pending approval.",
+        status: "pending_approval",
+        pauseReason: null,
+      },
+    });
+
+    const overview = await briefsService({} as any).overview("company-1");
+
+    expect(overview.status).toBe("unavailable");
+    expect(overview.warning).toMatchObject({
+      code: "built_in_agent_unavailable",
+      status: "pending_approval",
+    });
+  });
+
   it("passes through the built-in missing-agent 412", async () => {
     const error = new HttpError(412, "Built-in agent is not configured: briefs", {
       code: "built_in_agent_not_configured",

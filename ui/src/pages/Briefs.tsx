@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, LayoutDashboard } from "lucide-react";
 
 import { briefsApi } from "@/api/briefs";
+import { ApiError } from "@/api/client";
 import { BuiltInAgentGate } from "@/components/BuiltInAgentGate";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -27,6 +28,10 @@ function BriefsOverviewPanel({ companyId }: { companyId: string }) {
 
   if (isLoading) return <PageSkeleton variant="detail" />;
 
+  if (error instanceof ApiError && error.status === 412) {
+    return <BuiltInAgentGate agentKey="briefs" companyId={companyId} featureLabel="Briefs" error={error} />;
+  }
+
   if (error) {
     return (
       <p className="text-sm text-destructive">
@@ -39,6 +44,9 @@ function BriefsOverviewPanel({ companyId }: { companyId: string }) {
 
   return (
     <div className="space-y-5">
+      {data.warning ? (
+        <p className="text-sm text-destructive">{data.warning.message}</p>
+      ) : null}
       <div className="grid border-y border-border sm:grid-cols-3">
         {data.summaryItems.map((item) => (
           <div key={item.label} className="space-y-1 border-b border-border py-3 sm:border-b-0 sm:border-r sm:px-4 first:sm:pl-0 last:sm:border-r-0 last:sm:pr-0">

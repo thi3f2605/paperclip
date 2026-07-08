@@ -13,7 +13,11 @@ export function briefsService(db: Db) {
 
       return {
         featureKey: "briefs",
-        status: warning ? "paused" : "ready",
+        status: warning?.code === "built_in_agent_paused"
+          ? "paused"
+          : warning
+            ? "unavailable"
+            : "ready",
         generatedAt: now.toISOString(),
         agent: {
           id: agent.id,

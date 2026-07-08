@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/api/client";
 import { Briefs } from "./Briefs";
 
 const companyState = vi.hoisted(() => ({
@@ -31,29 +31,6 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 
 vi.mock("@/api/briefs", () => ({
   briefsApi: briefsApiMock,
-}));
-
-vi.mock("@/components/BuiltInAgentGate", () => ({
-  BuiltInAgentGate: ({
-    agentKey,
-    companyId,
-    featureLabel,
-    children,
-  }: {
-    agentKey: string;
-    companyId: string | null | undefined;
-    featureLabel?: string;
-    children: ReactNode;
-  }) => (
-    <div
-      data-testid="built-in-gate"
-      data-agent-key={agentKey}
-      data-company-id={companyId ?? ""}
-      data-feature-label={featureLabel ?? ""}
-    >
-      {children}
-    </div>
-  ),
 }));
 
 async function flushReact() {
@@ -119,14 +96,10 @@ describe("Briefs page", () => {
     container.remove();
   });
 
-  it("wraps the live surface in the Briefs built-in agent gate", async () => {
+  it("renders the live Briefs surface when the built-in agent is configured", async () => {
     root = renderBriefs(container);
     await flushReact();
 
-    const gate = container.querySelector('[data-testid="built-in-gate"]');
-    expect(gate?.getAttribute("data-agent-key")).toBe("briefs");
-    expect(gate?.getAttribute("data-company-id")).toBe("company-1");
-    expect(gate?.getAttribute("data-feature-label")).toBe("Briefs");
     expect(briefsApiMock.overview).toHaveBeenCalledWith("company-1");
     expect(container.textContent).toContain("Briefs Agent");
     expect(container.textContent).toContain("No briefs yet");
@@ -139,7 +112,28 @@ describe("Briefs page", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Select a company to view briefs.");
-    expect(container.querySelector('[data-testid="built-in-gate"]')).toBeNull();
     expect(briefsApiMock.overview).not.toHaveBeenCalled();
+  });
+
+  it("renders a setup state for the missing built-in Briefs agent", async () => {
+    briefsApiMock.overview.mockRejectedValue(new ApiError(
+      "Built-in agent is not configured: briefs",
+      412,
+      {
+        code: "built_in_agent_not_configured",
+        details: {
+          key: "briefs",
+          status: "not_provisioned",
+          featureKeys: ["briefs"],
+        },
+      },
+    ));
+
+    root = renderBriefs(container);
+    await flushReact();
+
+    expect(container.textContent).toContain("Briefs agent unavailable");
+    expect(container.textContent).toContain("Briefs needs a configured briefs agent");
+    expect(container.textContent).not.toContain("Built-in agent is not configured");
   });
 });

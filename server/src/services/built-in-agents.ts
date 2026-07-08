@@ -1,6 +1,7 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents } from "@paperclipai/db";
+import { isAgentStatusInvokable, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
 
 type BuiltInAgentKey = "briefs";
@@ -35,8 +36,30 @@ function builtInPausedWarning(definition: BuiltInAgentDefinition, agent: typeof 
     key: definition.key,
     agentId: agent.id,
     message: `${definition.displayName} is paused.`,
+    status: agent.status,
     pauseReason: agent.pauseReason,
   };
+}
+
+function builtInUnavailableWarning(definition: BuiltInAgentDefinition, agent: typeof agents.$inferSelect) {
+  return {
+    code: "built_in_agent_unavailable" as const,
+    key: definition.key,
+    agentId: agent.id,
+    message: `${definition.displayName} is ${agent.status.replace(/_/g, " ")}.`,
+    status: agent.status,
+    pauseReason: agent.pauseReason,
+  };
+}
+
+function builtInAgentWarning(definition: BuiltInAgentDefinition, agent: typeof agents.$inferSelect) {
+  if (isAgentStatusInvokable(agent.status)) return null;
+  if (agent.status === "paused") return builtInPausedWarning(definition, agent);
+  return builtInUnavailableWarning(definition, agent);
+}
+
+function builtInAgentNameKey(definition: BuiltInAgentDefinition) {
+  return normalizeAgentUrlKey(definition.displayName) ?? definition.key;
 }
 
 export function builtInAgentService(db: Db) {
@@ -45,7 +68,7 @@ export function builtInAgentService(db: Db) {
       const definition = BUILT_IN_AGENT_DEFINITIONS[key];
       if (!definition) throw new HttpError(404, `Unknown built-in agent: ${key}`);
 
-      const [agent] = await db.select()
+      const [metadataAgent] = await db.select()
         .from(agents)
         .where(and(
           eq(agents.companyId, companyId),
@@ -55,13 +78,22 @@ export function builtInAgentService(db: Db) {
           ),
         ))
         .limit(1);
+      const [fallbackAgent] = metadataAgent ? [] : await db.select()
+        .from(agents)
+        .where(and(
+          eq(agents.companyId, companyId),
+          sql`trim(both '-' from regexp_replace(lower(${agents.name}), '[^a-z0-9]+', '-', 'g')) = ${builtInAgentNameKey(definition)}`,
+        ))
+        .limit(1);
+
+      const agent = metadataAgent ?? fallbackAgent;
 
       if (!agent) throw missingBuiltInAgent(definition);
 
       return {
         definition,
         agent,
-        warning: agent.status === "paused" ? builtInPausedWarning(definition, agent) : null,
+        warning: builtInAgentWarning(definition, agent),
       };
     },
   };
