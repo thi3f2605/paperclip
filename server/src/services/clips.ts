@@ -44,6 +44,8 @@ type Actor = {
   userId?: string | null;
 };
 
+type ClipRevisionClient = Pick<Db, "insert" | "select">;
+
 function first<T>(rows: T[]): T | null {
   return rows[0] ?? null;
 }
@@ -172,14 +174,22 @@ export function clipService(db: Db) {
     q?: string | null;
     type?: string | null;
     tag?: string | null;
+    creatorProfileId?: string | null;
+    includeUnlisted?: boolean;
     limit?: number;
     offset?: number;
   } = {}) {
     const conditions = [
-      eq(clips.visibility, "public"),
+      input.includeUnlisted
+        ? inArray(clips.visibility, PUBLIC_DETAIL_VISIBILITIES)
+        : eq(clips.visibility, "public"),
       eq(clips.status, PUBLIC_STATUS),
-      inArray(clips.moderationState, PUBLIC_BROWSE_MODERATION_STATES),
+      inArray(
+        clips.moderationState,
+        input.includeUnlisted ? PUBLIC_DETAIL_MODERATION_STATES : PUBLIC_BROWSE_MODERATION_STATES,
+      ),
     ];
+    if (input.creatorProfileId) conditions.push(eq(clips.creatorProfileId, input.creatorProfileId));
     if (input.type) conditions.push(eq(clips.type, input.type));
     if (input.q) {
       const q = `%${input.q.trim()}%`;
@@ -266,9 +276,9 @@ export function clipService(db: Db) {
     return createCreatorProfile(companyId, input.creatorProfile);
   }
 
-  async function insertRevision(clipId: string, input: CreateClipRevision, requestedRevisionNumber?: number) {
-    const revisionNumber = requestedRevisionNumber ?? await nextRevisionNumber(clipId);
-    const [revision] = await db
+  async function insertRevision(client: ClipRevisionClient, clipId: string, input: CreateClipRevision, requestedRevisionNumber?: number) {
+    const revisionNumber = requestedRevisionNumber ?? await nextRevisionNumber(client, clipId);
+    const [revision] = await client
       .insert(clipRevisions)
       .values({
         clipId,
@@ -294,7 +304,7 @@ export function clipService(db: Db) {
       .returning();
 
     if (input.dependencies?.length) {
-      await db.insert(clipDependencies).values(
+      await client.insert(clipDependencies).values(
         input.dependencies.map((dependency) => ({
           clipId,
           revisionId: revision.id,
@@ -309,8 +319,8 @@ export function clipService(db: Db) {
     return revision;
   }
 
-  async function nextRevisionNumber(clipId: string) {
-    const [row] = await db
+  async function nextRevisionNumber(client: Pick<Db, "select">, clipId: string) {
+    const [row] = await client
       .select({ maxRevision: sql<number>`coalesce(max(${clipRevisions.revisionNumber}), 0)` })
       .from(clipRevisions)
       .where(eq(clipRevisions.clipId, clipId));
@@ -343,7 +353,7 @@ export function clipService(db: Db) {
         sourceObjectId: input.sourceObjectId ?? null,
       })
       .returning();
-    const revision = await insertRevision(clip.id, input.revision, 1);
+    const revision = await insertRevision(db, clip.id, input.revision, 1);
     const visibleRevisionId = clip.status === "published" ? revision.id : null;
     const [updated] = await db
       .update(clips)
@@ -359,18 +369,22 @@ export function clipService(db: Db) {
   }
 
   async function createRevision(clipId: string, input: CreateClipRevision) {
-    const clip = await getClipById(clipId);
-    if (!clip) throw notFound("Clip not found");
-    const revision = await insertRevision(clip.id, input);
-    const [updated] = await db
-      .update(clips)
-      .set({
-        currentRevisionId: revision.id,
-        latestApprovedRevisionId: clip.status === "published" && clip.moderationState !== "blocked" ? revision.id : clip.latestApprovedRevisionId,
-        updatedAt: new Date(),
-      })
-      .where(eq(clips.id, clip.id))
-      .returning();
+    const { clip: updated, revision } = await db.transaction(async (tx) => {
+      await tx.execute(sql`select ${clips.id} from ${clips} where ${clips.id} = ${clipId} for update`);
+      const clip = first(await tx.select().from(clips).where(eq(clips.id, clipId)).limit(1));
+      if (!clip) throw notFound("Clip not found");
+      const revision = await insertRevision(tx, clip.id, input);
+      const [updated] = await tx
+        .update(clips)
+        .set({
+          currentRevisionId: revision.id,
+          latestApprovedRevisionId: clip.status === "published" && clip.moderationState !== "blocked" ? revision.id : clip.latestApprovedRevisionId,
+          updatedAt: new Date(),
+        })
+        .where(eq(clips.id, clip.id))
+        .returning();
+      return { clip: updated, revision };
+    });
     await rebuildRankingSnapshot(updated);
     return { clip: updated, revision };
   }
@@ -662,7 +676,11 @@ export function clipService(db: Db) {
         .limit(1),
     );
     if (!profile) return null;
-    const publicClips = await listPublic({ limit: 100 });
+    const publicClips = await listPublic({
+      creatorProfileId: profile.id,
+      includeUnlisted: true,
+      limit: 100,
+    });
     return {
       profile: {
         id: profile.id,
@@ -674,7 +692,7 @@ export function clipService(db: Db) {
         verificationState: profile.verificationState,
         reputationSummary: profile.reputationSummary,
       },
-      clips: publicClips.filter((clip) => clip.creatorProfileId === profile.id),
+      clips: publicClips,
     };
   }
 

@@ -41,6 +41,112 @@ vi.mock("../services/index.js", () => ({
   logActivity: mockLogActivity,
 }));
 
+
+const HASH = "sha256:" + "0".repeat(64);
+
+function importableManifest(slug = "support-triage") {
+  return {
+    schema: "paperclip.clip/v1",
+    clip: {
+      id: "clip_1",
+      slug,
+      type: "bundle",
+      revisionId: "cliprev_1",
+      revisionNumber: 1,
+      manifestVersion: 1,
+      title: "Support Triage",
+      summary: "Routes support tickets.",
+      visibility: "public",
+      creator: null,
+    },
+    publication: {
+      source: {
+        kind: "paperclip_company_object",
+        objectType: "bundle",
+        exportedAt: "2026-05-16T00:00:00.000Z",
+      },
+      compatibility: {
+        paperclip: null,
+        manifest: "agentcompanies/v1-draft",
+      },
+    },
+    artifact: {
+      format: "agentcompanies",
+      version: "agentcompanies/v1-draft",
+      checksum: HASH,
+      entrypoint: "COMPANY.md",
+      paperclipExtension: ".paperclip.yaml",
+      payload: {
+        manifest: { schemaVersion: 1 },
+        files: { "COMPANY.md": "# Support Triage" },
+      },
+    },
+    dependencies: {
+      adapters: [],
+      plugins: [],
+      skills: [],
+      secrets: [],
+      permissions: [],
+      runtime: {
+        localShell: false,
+        browser: false,
+        filesystem: "none",
+        webhooks: false,
+        recurringRoutines: false,
+      },
+      workspaces: [],
+      budgetHints: { monthlyCents: 0, sourceRefs: [] },
+    },
+    security: {
+      redactionReport: {
+        schema: "paperclip.clip.redaction/v1",
+        generatedAt: "2026-05-16T00:00:00.000Z",
+        entries: [],
+        summary: { allowed: 0, redacted: 0, summarized: 0, omitted: 0 },
+      },
+      dangerousCapabilities: [],
+      routinePolicy: {
+        importedTriggersEnabledByDefault: false,
+        webhookSecretsRegenerated: true,
+      },
+      reviewState: "unreviewed",
+    },
+    verification: {
+      expectedFirstRun: null,
+      sampleOutputs: [],
+      validationStatus: "not_run",
+    },
+    social: {
+      sourceUrl: null,
+      revisionUrl: null,
+    },
+    provenance: {
+      publishedByProfileId: null,
+      revisionPublishedAt: "2026-05-16T00:00:00.000Z",
+      previousRevisionId: null,
+    },
+    checksums: {
+      artifact: HASH,
+      redactionReport: HASH,
+      manifest: HASH,
+    },
+  };
+}
+
+function publicClipFixture(input: { clipId: string; slug?: string }) {
+  const slug = input.slug ?? "support-triage";
+  return {
+    id: input.clipId,
+    slug,
+    currentRevision: {
+      revisionNumber: 1,
+      manifestChecksum: HASH,
+      artifactChecksum: HASH,
+      manifestPayload: importableManifest(slug),
+    },
+  };
+}
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -71,5 +177,51 @@ describe("clip routes", () => {
     expect(res.body).toEqual({ error: "Invalid companyId path parameter." });
     expect(mockCompanyService.getById).not.toHaveBeenCalled();
     expect(mockCompanyPortabilityService.previewExport).not.toHaveBeenCalled();
+  });
+
+  it("uses the clip source company when building import previews", async () => {
+    const destinationCompanyId = "11111111-1111-4111-8111-111111111111";
+    const sourceCompanyId = "22222222-2222-4222-8222-222222222222";
+    const clipId = "33333333-3333-4333-8333-333333333333";
+    mockClipService.getPublicDetail.mockResolvedValue(publicClipFixture({ clipId }));
+    mockClipService.getClipById.mockResolvedValue({ id: clipId, sourceCompanyId });
+    mockCompanyPortabilityService.previewImport.mockResolvedValue({ warnings: [] });
+
+    const res = await request(createApp())
+      .post("/api/companies/" + destinationCompanyId + "/clips/import-preview")
+      .send({ url: "https://paperclip.ing/clips/support-triage" });
+
+    expect(res.status).toBe(200);
+    expect(mockCompanyPortabilityService.previewImport).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { mode: "existing_company", companyId: destinationCompanyId } }),
+      expect.objectContaining({ mode: "agent_safe", sourceCompanyId }),
+    );
+  });
+
+  it("uses the clip source company when applying imports", async () => {
+    const destinationCompanyId = "11111111-1111-4111-8111-111111111111";
+    const sourceCompanyId = "22222222-2222-4222-8222-222222222222";
+    const clipId = "33333333-3333-4333-8333-333333333333";
+    mockClipService.getPublicDetail.mockResolvedValue(publicClipFixture({ clipId }));
+    mockClipService.getClipById.mockResolvedValue({ id: clipId, sourceCompanyId });
+    mockCompanyPortabilityService.previewImport.mockResolvedValue({ warnings: [] });
+    mockCompanyPortabilityService.importBundle.mockResolvedValue({
+      agents: [],
+      projects: [],
+      issues: [],
+      skills: [],
+      warnings: [],
+    });
+
+    const res = await request(createApp())
+      .post("/api/companies/" + destinationCompanyId + "/clips/import")
+      .send({ url: "https://paperclip.ing/clips/support-triage" });
+
+    expect(res.status).toBe(200);
+    expect(mockCompanyPortabilityService.importBundle).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { mode: "existing_company", companyId: destinationCompanyId } }),
+      "board",
+      expect.objectContaining({ mode: "agent_safe", sourceCompanyId }),
+    );
   });
 });

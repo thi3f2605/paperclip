@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   clipComments,
@@ -182,5 +182,94 @@ describeEmbeddedPostgres("clipService", () => {
     const reports = await db.select().from(clipFlags).where(eq(clipFlags.clipId, clip.id));
     expect(reports).toHaveLength(1);
     expect(reports[0]?.reason).toBe("unsafe_automation");
+  });
+
+  it("serializes concurrent revision numbering for the same clip", async () => {
+    const companyId = await seedCompany();
+    const { clip } = await publishFixture(companyId);
+
+    const [firstUpdate, secondUpdate] = await Promise.all([
+      svc.createRevision(clip.id, {
+        manifestChecksum: "sha256:manifest-concurrent-a",
+        artifactChecksum: "sha256:artifact-concurrent-a",
+        manifestPayload: { schema: "paperclip.clip/v1", revision: "a" },
+        changeSummary: "Concurrent update A.",
+      }),
+      svc.createRevision(clip.id, {
+        manifestChecksum: "sha256:manifest-concurrent-b",
+        artifactChecksum: "sha256:artifact-concurrent-b",
+        manifestPayload: { schema: "paperclip.clip/v1", revision: "b" },
+        changeSummary: "Concurrent update B.",
+      }),
+    ]);
+
+    expect([firstUpdate.revision.revisionNumber, secondUpdate.revision.revisionNumber].sort()).toEqual([2, 3]);
+    const revisions = await db
+      .select({ revisionNumber: clipRevisions.revisionNumber })
+      .from(clipRevisions)
+      .where(eq(clipRevisions.clipId, clip.id))
+      .orderBy(asc(clipRevisions.revisionNumber));
+    expect(revisions.map((revision) => revision.revisionNumber)).toEqual([1, 2, 3]);
+  });
+
+  it("queries creator profile clips by creator before applying limits", async () => {
+    const targetCompanyId = await seedCompany();
+    const otherCompanyId = await seedCompany();
+    const [targetProfile] = await db.insert(clipCreatorProfiles).values({
+      companyId: targetCompanyId,
+      handle: "target-" + targetCompanyId.slice(0, 8),
+      displayName: "Target Creator",
+    }).returning();
+    const [otherProfile] = await db.insert(clipCreatorProfiles).values({
+      companyId: otherCompanyId,
+      handle: "other-" + otherCompanyId.slice(0, 8),
+      displayName: "Other Creator",
+    }).returning();
+    if (!targetProfile || !otherProfile) {
+      throw new Error("Expected creator profiles to be inserted");
+    }
+
+    await db.insert(clips).values([
+      {
+        sourceCompanyId: targetCompanyId,
+        creatorProfileId: targetProfile.id,
+        slug: "target-public-" + targetCompanyId.slice(0, 8),
+        type: "agent",
+        title: "Target Public Clip",
+        summary: "A public target clip.",
+        visibility: "public",
+        status: "published",
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      {
+        sourceCompanyId: targetCompanyId,
+        creatorProfileId: targetProfile.id,
+        slug: "target-unlisted-" + targetCompanyId.slice(0, 8),
+        type: "agent",
+        title: "Target Unlisted Clip",
+        summary: "An unlisted target clip.",
+        visibility: "unlisted",
+        status: "published",
+        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        sourceCompanyId: otherCompanyId,
+        creatorProfileId: otherProfile.id,
+        slug: "other-public-" + otherCompanyId.slice(0, 8) + "-" + index,
+        type: "agent",
+        title: "Other Public Clip " + index,
+        summary: "A newer public clip from another creator.",
+        visibility: "public",
+        status: "published",
+        updatedAt: new Date(Date.UTC(2026, 1, 1, 0, index)),
+      })),
+    ]);
+
+    const profile = await svc.getCreatorPublicProfile(targetProfile.handle);
+
+    expect(profile?.clips.map((clip) => clip.slug).sort()).toEqual([
+      "target-public-" + targetCompanyId.slice(0, 8),
+      "target-unlisted-" + targetCompanyId.slice(0, 8),
+    ]);
   });
 });

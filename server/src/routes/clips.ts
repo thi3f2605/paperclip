@@ -31,7 +31,9 @@ import type { StorageService } from "../storage/types.js";
 
 const CLIP_RATE_LIMIT_WINDOW_MS = 60_000;
 const CLIP_RATE_LIMIT_MAX_REQUESTS = 60;
+const CLIP_RATE_LIMIT_EVICTION_INTERVAL_MS = CLIP_RATE_LIMIT_WINDOW_MS;
 const clipRateLimitHits = new Map<string, number[]>();
+let clipRateLimitLastEvictionAt = 0;
 
 function actorForClip(req: Request) {
   if (req.actor.type === "agent") {
@@ -73,9 +75,23 @@ function getClipCompanyIdParam(req: Request) {
   return companyId;
 }
 
+function evictExpiredClipRateLimitHits(cutoff: number, now: number) {
+  if (now - clipRateLimitLastEvictionAt < CLIP_RATE_LIMIT_EVICTION_INTERVAL_MS) return;
+  clipRateLimitLastEvictionAt = now;
+  for (const [key, hits] of clipRateLimitHits) {
+    const recent = hits.filter((hit) => hit > cutoff);
+    if (recent.length > 0) {
+      clipRateLimitHits.set(key, recent);
+    } else {
+      clipRateLimitHits.delete(key);
+    }
+  }
+}
+
 function consumeClipRateLimit(req: Request, res: { setHeader(name: string, value: string): void; status(code: number): { json(value: unknown): void } }, action: string) {
   const now = Date.now();
   const cutoff = now - CLIP_RATE_LIMIT_WINDOW_MS;
+  evictExpiredClipRateLimitHits(cutoff, now);
   const actor = actorForClip(req);
   const ip = req.ip || req.socket.remoteAddress || "unknown-ip";
   const key = `${action}:${actor.actorType}:${actor.actorId}:${ip}`;
@@ -188,6 +204,10 @@ export function clipRoutes(db: Db, storage?: StorageService) {
     if (!clip?.currentRevision) {
       throw unprocessable("Clip was not found or is not importable.");
     }
+    const sourceClip = await svc.getClipById(clip.id);
+    if (!sourceClip) {
+      throw unprocessable("Clip source metadata was not found.");
+    }
     const manifestPayload = clip.currentRevision.manifestPayload;
     const parsed = clipManifestSchema.safeParse(manifestPayload);
     if (!parsed.success) {
@@ -204,13 +224,14 @@ export function clipRoutes(db: Db, storage?: StorageService) {
       collisionStrategy: input.collisionStrategy ?? "rename",
     }, {
       mode: "agent_safe",
-      sourceCompanyId: companyId,
+      sourceCompanyId: sourceClip.sourceCompanyId,
     });
     return {
       clip,
       parsedManifest: parsed.data,
       files,
       preview,
+      sourceCompanyId: sourceClip.sourceCompanyId,
       source: {
         url: input.url,
         revisionNumber: clip.currentRevision.revisionNumber,
@@ -534,7 +555,7 @@ export function clipRoutes(db: Db, storage?: StorageService) {
       collisionStrategy: req.body.collisionStrategy ?? "rename",
     }, req.actor.type === "board" ? req.actor.userId : null, {
       mode: "agent_safe",
-      sourceCompanyId: companyId,
+      sourceCompanyId: result.sourceCompanyId,
     });
     await svc.recordImportTelemetry(result.clip.slug, {
       revisionNumber: result.source.revisionNumber,
