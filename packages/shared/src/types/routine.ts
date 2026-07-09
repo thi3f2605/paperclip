@@ -106,6 +106,7 @@ export interface Routine {
   latestRevisionNumber: number;
   createdByAgentId: string | null;
   createdByUserId: string | null;
+  responsibleUserId: string | null;
   updatedByAgentId: string | null;
   updatedByUserId: string | null;
   lastTriggeredAt: Date | null;
@@ -144,6 +145,7 @@ export interface RoutineRevisionSnapshotRoutineV1 {
   originId?: string | null;
   variables: RoutineVariable[];
   env: RoutineEnvConfig | null;
+  responsibleUserId: string | null;
 }
 
 export interface RoutineRevisionSnapshotTriggerV1 {

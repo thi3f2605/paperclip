@@ -73,6 +73,7 @@ export const issuesApi = {
       includeSpecialOrigins?: boolean;
       includeBlockedBy?: boolean;
       includeBlockedInboxAttention?: boolean;
+      includeLiveDescendantSummary?: boolean;
       hasPlanDocument?: boolean;
       q?: string;
       limit?: number;
@@ -103,6 +104,7 @@ export const issuesApi = {
     if (filters?.includeSpecialOrigins) params.set("includeSpecialOrigins", "true");
     if (filters?.includeBlockedBy) params.set("includeBlockedBy", "true");
     if (filters?.includeBlockedInboxAttention) params.set("includeBlockedInboxAttention", "true");
+    if (filters?.includeLiveDescendantSummary) params.set("includeLiveDescendantSummary", "true");
     if (filters?.hasPlanDocument !== undefined) {
       params.set("hasPlanDocument", filters.hasPlanDocument ? "true" : "false");
     }

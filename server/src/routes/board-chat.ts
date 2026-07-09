@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { instanceSettingsService, issueService } from "../services/index.js";
-import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
+import { assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
 
 const BOARD_CHAT_ORIGIN_KIND = "board_chat";
 const LEGACY_BOARD_CHAT_TITLE = "Board Operations";
@@ -75,7 +75,13 @@ function getBoardChatUnavailableReason(
 async function resolveOrCreateBoardChatIssue(
   issueSvc: ReturnType<typeof issueService>,
   companyId: string,
-  opts: { message?: string; wantsNewConversation?: boolean },
+  opts: {
+    message?: string;
+    wantsNewConversation?: boolean;
+    createdByUserId?: string | null;
+    responsibleUserId?: string | null;
+    trustExplicitResponsibleUserId?: boolean;
+  },
 ): Promise<{ id: string }> {
   if (!opts.wantsNewConversation) {
     const boardChatIssues = await issueSvc.list(companyId, {
@@ -110,6 +116,9 @@ async function resolveOrCreateBoardChatIssue(
     // and the service rejects in_progress issues without an assignee.
     status: "todo",
     priority: "medium",
+    createdByUserId: opts.createdByUserId ?? null,
+    responsibleUserId: opts.responsibleUserId ?? null,
+    trustExplicitResponsibleUserId: opts.trustExplicitResponsibleUserId === true,
   });
 }
 
@@ -149,10 +158,14 @@ export function boardChatRoutes(
     assertInstanceAdmin(req);
     assertCompanyAccess(req, companyId);
 
+    const actor = getActorInfo(req);
     const wantsNewConversation = newConversation === true || newConversation === "true";
     const issue = await resolveOrCreateBoardChatIssue(issueService(db), companyId, {
       message,
       wantsNewConversation,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      responsibleUserId: actor.actorType === "user" ? actor.actorId : null,
+      trustExplicitResponsibleUserId: actor.actorType === "user",
     });
     res.status(200).json({ issue });
   });

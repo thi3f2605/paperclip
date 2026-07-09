@@ -706,7 +706,7 @@ export function BoardChat() {
               <Activity className="h-4 w-4" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="bottom" className="h-[70vh] p-0 rounded-t-xl">
+          <SheetContent side="bottom" className="h-(--sz-70vh) p-0 rounded-t-xl">
             <ActivityFeed />
           </SheetContent>
         </Sheet>
