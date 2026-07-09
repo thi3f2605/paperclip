@@ -35,12 +35,22 @@ export interface CodexCredentialTelemetrySnapshot {
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const EIGHT_DAYS_MS = 8 * 24 * ONE_HOUR_MS;
 
+function missingCodexCredentialTelemetrySnapshot(): CodexCredentialTelemetrySnapshot {
+  return {
+    refreshTokenFingerprint: null,
+    lastRefreshAgeBucket: "missing",
+  };
+}
+
 const CODEX_REFRESH_TOKEN_REUSED_RE =
   /(?:refresh[_\s-]?token[_\s-]?reused|refresh token (?:has )?already been used|token reuse detected)/i;
 const CODEX_REFRESH_TOKEN_EXPIRED_RE =
   /(?:refresh[_\s-]?token[_\s-]?expired|refresh token (?:has )?expired|expired refresh token)/i;
 const CODEX_REFRESH_TOKEN_INVALIDATED_RE =
-  /(?:refresh[_\s-]?token[_\s-]?invalidated|refresh token (?:has been )?(?:invalidated|revoked|invalid)|invalid refresh token|invalid[_\s-]?grant|unauthorized|missing bearer|\b401\b)/i;
+  /(?:refresh[_\s-]?token[_\s-]?(?:invalidated|revoked|invalid)|refresh token (?:has been )?(?:invalidated|revoked|invalid)|invalid refresh token|missing bearer)/i;
+const CODEX_OAUTH_INVALID_GRANT_RE = /\binvalid_grant\b/i;
+const CODEX_CONTEXTUAL_REFRESH_AUTH_INVALIDATED_RE =
+  /(?:(?:oauth|refresh|access[_\s-]?token|bearer|credential).{0,80}(?:\b401\b|unauthori[sz]ed|\binvalid[\s-]grant\b)|(?:\b401\b|unauthori[sz]ed|\binvalid[\s-]grant\b).{0,80}(?:oauth|refresh|access[_\s-]?token|bearer|credential))/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -85,26 +95,23 @@ export async function readCodexCredentialTelemetrySnapshot(
   try {
     raw = await fs.readFile(authPath, "utf8");
   } catch {
-    return {
-      refreshTokenFingerprint: null,
-      lastRefreshAgeBucket: "missing",
-    };
+    return missingCodexCredentialTelemetrySnapshot();
   }
+  return parseCodexCredentialTelemetrySnapshot(raw, now);
+}
 
+export function parseCodexCredentialTelemetrySnapshot(
+  raw: string,
+  now = new Date(),
+): CodexCredentialTelemetrySnapshot {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return {
-      refreshTokenFingerprint: null,
-      lastRefreshAgeBucket: "missing",
-    };
+    return missingCodexCredentialTelemetrySnapshot();
   }
   if (!isPlainObject(parsed)) {
-    return {
-      refreshTokenFingerprint: null,
-      lastRefreshAgeBucket: "missing",
-    };
+    return missingCodexCredentialTelemetrySnapshot();
   }
 
   return {
@@ -135,6 +142,8 @@ export function classifyCodexAuthRefreshFailure(input: {
   if (CODEX_REFRESH_TOKEN_REUSED_RE.test(haystack)) return "refresh_token_reused";
   if (CODEX_REFRESH_TOKEN_EXPIRED_RE.test(haystack)) return "refresh_token_expired";
   if (CODEX_REFRESH_TOKEN_INVALIDATED_RE.test(haystack)) return "refresh_token_invalidated";
+  if (CODEX_OAUTH_INVALID_GRANT_RE.test(haystack)) return "refresh_token_invalidated";
+  if (CODEX_CONTEXTUAL_REFRESH_AUTH_INVALIDATED_RE.test(haystack)) return "refresh_token_invalidated";
   return null;
 }
 

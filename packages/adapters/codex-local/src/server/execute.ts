@@ -17,7 +17,9 @@ import {
   resolveAdapterExecutionTargetTimeoutSec,
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
+  runAdapterExecutionTargetShellCommand,
   startAdapterExecutionTargetPaperclipBridge,
+  type AdapterExecutionTarget,
 } from "@paperclipai/adapter-utils/execution-target";
 import {
   asString,
@@ -58,9 +60,11 @@ import {
   CODEX_CREDENTIAL_TELEMETRY_RESULT_KEY,
   buildCodexCredentialTelemetryDimensions,
   classifyCodexAuthRefreshFailure,
+  parseCodexCredentialTelemetrySnapshot,
   readCodexCredentialTelemetrySnapshot,
   type CodexAuthRefreshFailureClass,
   type CodexCredentialSeedSource,
+  type CodexCredentialTelemetrySnapshot,
 } from "./credential-telemetry.js";
 import { prepareCodexRuntimeConfig } from "./runtime-config.js";
 import { resolveCodexDesiredSkillNames } from "./skills.js";
@@ -82,6 +86,47 @@ const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const executeCodexAcp = createCodexAcpExecutor();
 const CODEX_ROLLOUT_NOISE_RE =
   /^\d{4}-\d{2}-\d{2}T[^\s]+\s+ERROR\s+codex_core::rollout::list:\s+state db missing rollout path for thread\s+[a-z0-9-]+$/i;
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function missingCodexCredentialTelemetrySnapshot(): CodexCredentialTelemetrySnapshot {
+  return { refreshTokenFingerprint: null, lastRefreshAgeBucket: "missing" };
+}
+
+async function readPostRunCodexCredentialTelemetrySnapshot(input: {
+  runId: string;
+  target: AdapterExecutionTarget | null | undefined;
+  localCodexHome: string;
+  remoteCodexHome: string | null;
+  cwd: string;
+}): Promise<CodexCredentialTelemetrySnapshot> {
+  if (!input.remoteCodexHome || input.target?.kind !== "remote") {
+    return await readCodexCredentialTelemetrySnapshot(input.localCodexHome);
+  }
+
+  const authPath = path.posix.join(input.remoteCodexHome, "auth.json");
+  try {
+    const result = await runAdapterExecutionTargetShellCommand(
+      input.runId,
+      input.target,
+      `if [ -f ${shellQuote(authPath)} ]; then cat ${shellQuote(authPath)}; fi`,
+      {
+        cwd: input.cwd,
+        env: {},
+        timeoutSec: 15,
+        graceSec: 5,
+      },
+    );
+    if (result.timedOut || result.exitCode !== 0) {
+      return missingCodexCredentialTelemetrySnapshot();
+    }
+    return parseCodexCredentialTelemetrySnapshot(result.stdout);
+  } catch {
+    return missingCodexCredentialTelemetrySnapshot();
+  }
+}
 
 function stripCodexRolloutNoise(text: string): string {
   const parts = text.split(/\r?\n/);
@@ -986,7 +1031,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         [CODEX_CREDENTIAL_TELEMETRY_RESULT_KEY]: buildCodexCredentialTelemetryDimensions({
           seedSource: codexCredentialSeedSource,
           seedSnapshot: codexCredentialSeedSnapshot,
-          postRunSnapshot: await readCodexCredentialTelemetrySnapshot(effectiveCodexHome),
+          postRunSnapshot: await readPostRunCodexCredentialTelemetrySnapshot({
+            runId,
+            target: runtimeExecutionTarget,
+            localCodexHome: effectiveCodexHome,
+            remoteCodexHome,
+            cwd: effectiveExecutionCwd,
+          }),
           failureClass,
         }),
       });
