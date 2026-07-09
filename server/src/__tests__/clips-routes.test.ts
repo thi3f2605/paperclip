@@ -5,6 +5,7 @@ import { clipRoutes } from "../routes/clips.js";
 import { errorHandler } from "../middleware/index.js";
 
 const mockClipService = vi.hoisted(() => ({
+  listPublic: vi.fn(),
   getPublicDetail: vi.fn(),
   getPublicRevision: vi.fn(),
   getCreatorPublicProfile: vi.fn(),
@@ -166,6 +167,21 @@ function createApp(actor: Record<string, unknown> = {
 describe("clip routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("ignores non-finite public browse pagination params", async () => {
+    mockClipService.listPublic.mockResolvedValue([]);
+
+    const res = await request(createApp()).get("/api/public/clips?limit=abc&offset=NaN");
+
+    expect(res.status).toBe(200);
+    expect(mockClipService.listPublic).toHaveBeenCalledWith({
+      q: null,
+      type: null,
+      tag: null,
+      limit: undefined,
+      offset: undefined,
+    });
   });
 
   it("normalizes public publish moderation and trust states before persistence", async () => {

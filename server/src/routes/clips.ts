@@ -260,8 +260,10 @@ export function clipRoutes(db: Db, storage?: StorageService) {
     const q = typeof req.query.q === "string" ? req.query.q : null;
     const type = typeof req.query.type === "string" ? req.query.type : null;
     const tag = typeof req.query.tag === "string" ? req.query.tag : null;
-    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
-    const offset = typeof req.query.offset === "string" ? Number(req.query.offset) : undefined;
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : undefined;
+    const limit = limitRaw !== undefined && Number.isFinite(limitRaw) ? limitRaw : undefined;
+    const offset = offsetRaw !== undefined && Number.isFinite(offsetRaw) ? offsetRaw : undefined;
     res.json(await svc.listPublic({ q, type, tag, limit, offset }));
   });
 
