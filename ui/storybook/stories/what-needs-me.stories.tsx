@@ -54,6 +54,10 @@ function item(
       href: "/PAP/issues/PAP-1000",
       metadata: {},
     },
+    project: null,
+    workspace: null,
+    detail: null,
+    dismissal: null,
     ...overrides,
   };
 }

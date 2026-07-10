@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  AlarmClock,
   ChevronDown,
   ChevronRight,
   Clock,
   ExternalLink,
   Loader2,
   MoreHorizontal,
+  RotateCcw,
+  X,
 } from "lucide-react";
 import type { Agent, AttentionItem } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
@@ -21,9 +24,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { AttentionInteractionResolver } from "./AttentionInteractionResolver";
+
+/** Snooze presets, resolved to a future ISO timestamp at click time. */
+const SNOOZE_PRESETS: ReadonlyArray<{ label: string; ms: number }> = [
+  { label: "1 hour", ms: 60 * 60 * 1000 },
+  { label: "3 hours", ms: 3 * 60 * 60 * 1000 },
+  { label: "Tomorrow", ms: 24 * 60 * 60 * 1000 },
+  { label: "Next week", ms: 7 * 24 * 60 * 60 * 1000 },
+];
 
 interface AttentionQueueRowProps {
   item: AttentionItem;
@@ -31,6 +46,11 @@ interface AttentionQueueRowProps {
   expanded: boolean;
   onToggleExpand: () => void;
   onDismiss: (item: AttentionItem) => void;
+  onSnooze?: (item: AttentionItem, snoozedUntil: string) => void;
+  /** Restore a snoozed/dismissed row (curtain variant only). */
+  onRestore?: (item: AttentionItem) => void;
+  /** "active" renders the live queue row; "hidden" renders a curtain row. */
+  variant?: "active" | "hidden";
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
@@ -42,6 +62,9 @@ export function AttentionQueueRow({
   expanded,
   onToggleExpand,
   onDismiss,
+  onSnooze,
+  onRestore,
+  variant = "active",
   agentMap,
   currentUserId,
   userLabelMap,
@@ -49,14 +72,17 @@ export function AttentionQueueRow({
   const meta = sourceMeta(item.sourceKind);
   const severity = severityStyle(item.severity);
   const Icon = meta.icon;
-  const inline = isInlineResolvable(item);
+  const isHidden = variant === "hidden";
+  const inline = !isHidden && isInlineResolvable(item);
   const href = item.subject.href;
+  const snoozedUntil = item.dismissal?.kind === "snooze" ? item.dismissal.snoozedUntil : null;
 
   return (
     <div
       className={cn(
         "relative flex flex-col overflow-hidden rounded-lg border border-border bg-card",
         "transition-colors hover:border-border/80",
+        isHidden && "bg-muted/30 opacity-80 hover:opacity-100",
       )}
       data-attention-source={item.sourceKind}
       data-attention-severity={item.severity}
@@ -97,10 +123,20 @@ export function AttentionQueueRow({
                 {item.relatedIssue.identifier}
               </Link>
             )}
-            <span className="ml-auto inline-flex items-center gap-1 text-(length:--text-nano) text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              {relativeTime(item.activityAt)}
-            </span>
+            {isHidden && snoozedUntil ? (
+              <span
+                className="ml-auto inline-flex items-center gap-1 text-(length:--text-nano) text-muted-foreground"
+                title={`Reappears ${new Date(snoozedUntil).toLocaleString()}`}
+              >
+                <AlarmClock className="h-3 w-3" />
+                Reappears {reappearLabel(snoozedUntil)}
+              </span>
+            ) : (
+              <span className="ml-auto inline-flex items-center gap-1 text-(length:--text-nano) text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                {relativeTime(item.activityAt)}
+              </span>
+            )}
           </div>
 
           <div className="mt-1 flex items-start gap-2">
@@ -131,27 +167,67 @@ export function AttentionQueueRow({
               </Button>
             )}
 
-            {/* Snooze / dismiss */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            {isHidden ? (
+              /* Curtain rows: restore back into the live queue. */
+              onRestore && (
                 <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="shrink-0 text-muted-foreground"
-                  aria-label="Row actions"
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  className="shrink-0"
+                  onClick={() => onRestore(item)}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <RotateCcw className="h-3 w-3" />
+                  Restore
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onDismiss(item)}>Snooze / dismiss</DropdownMenuItem>
-                {href && (
-                  <DropdownMenuItem asChild>
-                    <Link to={href}>Open source</Link>
+              )
+            ) : (
+              /* Active rows: snooze presets + dismiss. */
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="shrink-0 text-muted-foreground"
+                    aria-label="Row actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {onSnooze && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <AlarmClock className="h-4 w-4" />
+                        Snooze
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {SNOOZE_PRESETS.map((preset) => (
+                          <DropdownMenuItem
+                            key={preset.label}
+                            onClick={() => onSnooze(item, new Date(Date.now() + preset.ms).toISOString())}
+                          >
+                            {preset.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  <DropdownMenuItem onClick={() => onDismiss(item)}>
+                    <X className="h-4 w-4" />
+                    Dismiss
                   </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {href && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to={href}>Open source</Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </div>
@@ -169,6 +245,18 @@ export function AttentionQueueRow({
       )}
     </div>
   );
+}
+
+/** Compact "when does this snooze end" label, e.g. `in 2h`, `in 3d`. */
+function reappearLabel(snoozedUntil: string): string {
+  const diffMs = new Date(snoozedUntil).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return "soon";
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 60) return `in ${diffMin}m`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `in ${diffHr}h`;
+  const diffDay = Math.round(diffHr / 24);
+  return `in ${diffDay}d`;
 }
 
 function InlineResolver({

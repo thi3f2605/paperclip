@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionFeed, AttentionItem, AttentionSourceKind } from "@paperclipai/shared";
-import { attentionBadgeCount, isInlineResolvable, severityStyle, sourceMeta } from "./attention";
+import {
+  attentionBadgeCount,
+  attentionDateBucket,
+  buildAttentionFilterOptions,
+  countActiveAttentionFilters,
+  defaultAttentionFilterState,
+  filterAttentionItems,
+  groupAttentionItems,
+  isInlineResolvable,
+  NO_GROUP_SENTINEL,
+  severityStyle,
+  sortAttentionItems,
+  sourceMeta,
+} from "./attention";
 
 function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
@@ -21,6 +34,10 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
     createdAt: "2026-07-09T12:00:00Z",
     updatedAt: "2026-07-09T12:00:00Z",
     relatedIssue: null,
+    project: null,
+    workspace: null,
+    detail: null,
+    dismissal: null,
     ...overrides,
   };
 }
@@ -87,5 +104,162 @@ describe("sourceMeta + severityStyle", () => {
 
   it("maps escalation severity to distinct accents", () => {
     expect(severityStyle("critical").accent).not.toBe(severityStyle("low").accent);
+  });
+});
+
+describe("sortAttentionItems", () => {
+  const older = buildItem({ id: "old", activityAt: "2026-07-01T00:00:00Z", rank: 5 });
+  const newer = buildItem({ id: "new", activityAt: "2026-07-09T00:00:00Z", rank: 9 });
+
+  it("puts newest first by default", () => {
+    expect(sortAttentionItems([older, newer], "newest").map((i) => i.id)).toEqual(["new", "old"]);
+  });
+
+  it("reverses to oldest first", () => {
+    expect(sortAttentionItems([older, newer], "oldest").map((i) => i.id)).toEqual(["old", "new"]);
+  });
+
+  it("breaks activity ties by rank (lower rank wins) regardless of order", () => {
+    const a = buildItem({ id: "a", activityAt: "2026-07-09T00:00:00Z", rank: 2 });
+    const b = buildItem({ id: "b", activityAt: "2026-07-09T00:00:00Z", rank: 1 });
+    expect(sortAttentionItems([a, b], "newest").map((i) => i.id)).toEqual(["b", "a"]);
+    expect(sortAttentionItems([a, b], "oldest").map((i) => i.id)).toEqual(["b", "a"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const input = [older, newer];
+    sortAttentionItems(input, "newest");
+    expect(input.map((i) => i.id)).toEqual(["old", "new"]);
+  });
+});
+
+describe("attentionDateBucket", () => {
+  const now = new Date("2026-07-10T12:00:00Z").getTime();
+
+  it("buckets by rolling calendar-day windows relative to now", () => {
+    expect(attentionDateBucket("2026-07-10T09:00:00Z", now)).toBe("today");
+    expect(attentionDateBucket("2026-07-09T23:00:00Z", now)).toBe("yesterday");
+    expect(attentionDateBucket("2026-07-06T09:00:00Z", now)).toBe("this_week");
+    expect(attentionDateBucket("2026-06-01T09:00:00Z", now)).toBe("earlier");
+  });
+
+  it("treats invalid timestamps as earlier", () => {
+    expect(attentionDateBucket("not-a-date", now)).toBe("earlier");
+  });
+});
+
+describe("groupAttentionItems", () => {
+  const now = new Date("2026-07-10T12:00:00Z").getTime();
+
+  it("groups by date into fixed Today/Yesterday/This week/Earlier order", () => {
+    const items = [
+      buildItem({ id: "earlier", activityAt: "2026-06-01T00:00:00Z" }),
+      buildItem({ id: "today", activityAt: "2026-07-10T08:00:00Z" }),
+      buildItem({ id: "yesterday", activityAt: "2026-07-09T08:00:00Z" }),
+    ];
+    const groups = groupAttentionItems(items, "date", { now });
+    expect(groups.map((g) => g.label)).toEqual(["Today", "Yesterday", "Earlier"]);
+    expect(groups.map((g) => g.key)).toEqual(["date:today", "date:yesterday", "date:earlier"]);
+  });
+
+  it("groups by severity in escalation order regardless of input order", () => {
+    const items = [
+      buildItem({ id: "low", severity: "low" }),
+      buildItem({ id: "crit", severity: "critical" }),
+      buildItem({ id: "med", severity: "medium" }),
+    ];
+    const groups = groupAttentionItems(items, "severity");
+    expect(groups.map((g) => g.label)).toEqual(["Critical", "Medium", "Low"]);
+  });
+
+  it("groups by project, keeping a 'No project' bucket for unassigned rows", () => {
+    const items = [
+      buildItem({ id: "p1", activityAt: "2026-07-10T10:00:00Z", project: { id: "proj-1", name: "Alpha", urlKey: "alpha" } }),
+      buildItem({ id: "none", activityAt: "2026-07-10T11:00:00Z", project: null }),
+    ];
+    const groups = groupAttentionItems(items, "project");
+    const noneGroup = groups.find((g) => g.key === `project:${NO_GROUP_SENTINEL}`);
+    expect(noneGroup?.label).toBe("No project");
+    expect(groups.find((g) => g.key === "project:proj-1")?.label).toBe("Alpha");
+    // Freshest group floats first (No project row is newer).
+    expect(groups[0].key).toBe(`project:${NO_GROUP_SENTINEL}`);
+  });
+
+  it("groups by type using source labels", () => {
+    const items = [
+      buildItem({ id: "a", sourceKind: "approval" }),
+      buildItem({ id: "j", sourceKind: "join_request" }),
+    ];
+    const groups = groupAttentionItems(items, "type");
+    expect(groups.map((g) => g.key).sort()).toEqual(["type:approval", "type:join_request"]);
+  });
+
+  it("preserves the caller-provided intra-group order (sort governs within a bucket)", () => {
+    const items = sortAttentionItems(
+      [
+        buildItem({ id: "t1", activityAt: "2026-07-10T08:00:00Z" }),
+        buildItem({ id: "t2", activityAt: "2026-07-10T10:00:00Z" }),
+      ],
+      "newest",
+    );
+    const [today] = groupAttentionItems(items, "date", { now });
+    expect(today.items.map((i) => i.id)).toEqual(["t2", "t1"]);
+  });
+
+  it("returns no groups for an empty list", () => {
+    expect(groupAttentionItems([], "date", { now })).toEqual([]);
+  });
+});
+
+describe("filterAttentionItems", () => {
+  const approval = buildItem({ id: "ap", sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", urlKey: "a" } });
+  const join = buildItem({ id: "jn", sourceKind: "join_request", severity: "low", project: null });
+  const items = [approval, join];
+
+  it("returns everything when no filters are active", () => {
+    expect(filterAttentionItems(items, defaultAttentionFilterState)).toHaveLength(2);
+    expect(countActiveAttentionFilters(defaultAttentionFilterState)).toBe(0);
+  });
+
+  it("filters by source kind", () => {
+    const result = filterAttentionItems(items, { ...defaultAttentionFilterState, sourceKinds: ["approval"] });
+    expect(result.map((i) => i.id)).toEqual(["ap"]);
+  });
+
+  it("filters by severity", () => {
+    const result = filterAttentionItems(items, { ...defaultAttentionFilterState, severities: ["low"] });
+    expect(result.map((i) => i.id)).toEqual(["jn"]);
+  });
+
+  it("filters by project id and the no-project sentinel", () => {
+    expect(filterAttentionItems(items, { ...defaultAttentionFilterState, projectIds: ["p1"] }).map((i) => i.id)).toEqual(["ap"]);
+    expect(
+      filterAttentionItems(items, { ...defaultAttentionFilterState, projectIds: [NO_GROUP_SENTINEL] }).map((i) => i.id),
+    ).toEqual(["jn"]);
+  });
+
+  it("ANDs across dimensions", () => {
+    const result = filterAttentionItems(items, {
+      ...defaultAttentionFilterState,
+      sourceKinds: ["approval"],
+      severities: ["low"],
+    });
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("buildAttentionFilterOptions", () => {
+  it("collects the distinct dimensions present in the feed", () => {
+    const items = [
+      buildItem({ sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", urlKey: "a" }, workspace: { id: "w1", name: "WS" } }),
+      buildItem({ sourceKind: "join_request", severity: "low", project: null, workspace: null }),
+    ];
+    const options = buildAttentionFilterOptions(items);
+    expect(options.sourceKinds.sort()).toEqual(["approval", "join_request"]);
+    expect(options.severities).toEqual(["high", "low"]);
+    expect(options.projects.map((p) => p.id)).toEqual(["p1"]);
+    expect(options.workspaces.map((w) => w.id)).toEqual(["w1"]);
+    expect(options.hasNoProject).toBe(true);
+    expect(options.hasNoWorkspace).toBe(true);
   });
 });
